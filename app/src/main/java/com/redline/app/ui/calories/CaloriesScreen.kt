@@ -102,6 +102,7 @@ fun CaloriesScreen(viewModel: CaloriesViewModel = hiltViewModel()) {
                     IconButton(
                         onClick = {
                             if (!hasPermission) launcher.launch(Manifest.permission.RECORD_AUDIO)
+                            else if (isListening) viewModel.stopListening()
                             else viewModel.startListening()
                         },
                         modifier = Modifier.size(56.dp).clip(CircleShape).background(if (isListening) Red500 else SurfaceVariant)

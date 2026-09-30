@@ -8,11 +8,13 @@ import com.redline.app.nutrition.FoodResult
 import com.redline.app.nutrition.NutritionApi
 import com.redline.app.voice.SpeechRecognizerManager
 import com.redline.app.voice.SpeechState
+import com.redline.app.voice.forOwner
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -37,6 +39,8 @@ class CaloriesViewModel @Inject constructor(
     val uiState: StateFlow<CalorieUiState> = _uiState.asStateFlow()
 
     val speechState: StateFlow<SpeechState> = speechManager.state
+        .map { it.forOwner(OWNER) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, SpeechState.Idle)
 
     private val todayStart: Long
         get() {
@@ -53,14 +57,17 @@ class CaloriesViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             speechManager.state.collect { state ->
-                if (state is SpeechState.Result) {
+                if (state is SpeechState.Result && state.owner == OWNER) {
+                    speechManager.consume(OWNER)
                     searchFood(state.text)
                 }
             }
         }
     }
 
-    fun startListening() = speechManager.startListening()
+    fun startListening() = speechManager.startListening(OWNER)
+
+    fun stopListening() = speechManager.stopListening()
 
     fun searchFood(query: String) {
         viewModelScope.launch {
@@ -71,7 +78,6 @@ class CaloriesViewModel @Inject constructor(
             } else {
                 CalorieUiState(searchResults = results, lastQuery = query)
             }
-            speechManager.resetState()
         }
     }
 
@@ -98,6 +104,15 @@ class CaloriesViewModel @Inject constructor(
 
     fun clearSearch() {
         _uiState.value = CalorieUiState()
-        speechManager.resetState()
+        speechManager.consume(OWNER)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        speechManager.release(OWNER)
+    }
+
+    private companion object {
+        const val OWNER = "calories"
     }
 }

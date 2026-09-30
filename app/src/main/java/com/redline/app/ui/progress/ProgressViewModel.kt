@@ -14,7 +14,9 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 data class ProgressUiState(
-    val summaries: List<ExerciseProgress> = emptyList()
+    val summaries: List<ExerciseProgress> = emptyList(),
+    /** True until the first read from the database, so an empty list isn't mistaken for no data. */
+    val isLoading: Boolean = true
 )
 
 data class ExerciseProgress(
@@ -43,7 +45,7 @@ class ProgressViewModel @Inject constructor(
     repository: WorkoutRepository
 ) : ViewModel() {
     val uiState: StateFlow<ProgressUiState> = repository.getAllSets()
-        .map { sets -> ProgressUiState(buildSummaries(sets)) }
+        .map { sets -> ProgressUiState(buildSummaries(sets), isLoading = false) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ProgressUiState())
 
     private fun buildSummaries(sets: List<ExerciseSet>): List<ExerciseProgress> {

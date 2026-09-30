@@ -7,6 +7,7 @@ import com.redline.app.data.local.entity.MotivationalVideo
 import com.redline.app.data.local.entity.PrTrack
 import com.redline.app.data.local.entity.WorkoutSession
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -15,6 +16,9 @@ class WorkoutRepository @Inject constructor(
     private val workoutDao: WorkoutDao
 ) {
     fun getActiveSession(): Flow<WorkoutSession?> = workoutDao.getActiveSession()
+
+    fun getActiveSessionState(): Flow<SessionState> = workoutDao.getActiveSession()
+        .map { session -> if (session == null) SessionState.None else SessionState.Active(session) }
 
     fun getAllSessions(): Flow<List<WorkoutSession>> = workoutDao.getAllSessions()
 

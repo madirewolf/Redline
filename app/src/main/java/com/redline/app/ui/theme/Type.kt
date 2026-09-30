@@ -5,6 +5,9 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
+/** Digits of equal width, so a ticking timer doesn't jiggle. */
+val Tabular = TextStyle(fontFeatureSettings = "tnum")
+
 val RedlineTypography = Typography(
     displayLarge = TextStyle(
         fontWeight = FontWeight.Bold,

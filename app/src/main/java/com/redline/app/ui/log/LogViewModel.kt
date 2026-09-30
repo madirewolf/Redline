@@ -1,9 +1,15 @@
 package com.redline.app.ui.log
 
+import android.content.Context
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.redline.app.data.local.entity.ExerciseSet
 import com.redline.app.data.local.entity.WorkoutSession
+import com.redline.app.data.repository.SessionState
 import com.redline.app.data.repository.WorkoutRepository
 import com.redline.app.settings.SettingsStore
 import com.redline.app.ui.music.MusicController
@@ -12,17 +18,22 @@ import com.redline.app.voice.ParsedSet
 import com.redline.app.voice.SpeechRecognizerManager
 import com.redline.app.voice.SpeechState
 import com.redline.app.voice.VoiceParser
+import com.redline.app.voice.forOwner
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -33,14 +44,16 @@ data class LogUiState(
     val parseError: String? = null,
     val endedSessionId: Long? = null,
     val restTimerRemaining: Int = 0,
+    val restTimerTotal: Int = 0,
     val isResting: Boolean = false,
     val isLockedIn: Boolean = false
 )
 
 @HiltViewModel
 class LogViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val repository: WorkoutRepository,
-    val speechManager: SpeechRecognizerManager,
+    private val speechManager: SpeechRecognizerManager,
     private val voiceParser: VoiceParser,
     private val musicController: MusicController,
     private val settingsStore: SettingsStore,
@@ -50,8 +63,11 @@ class LogViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(LogUiState())
     val uiState: StateFlow<LogUiState> = _uiState.asStateFlow()
 
-    val activeSession: StateFlow<WorkoutSession?> = repository.getActiveSession()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    val sessionState: StateFlow<SessionState> = repository.getActiveSessionState()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SessionState.Loading)
+
+    private val activeSession: WorkoutSession?
+        get() = (sessionState.value as? SessionState.Active)?.session
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val currentSets: StateFlow<List<ExerciseSet>> = repository.getActiveSession()
@@ -62,30 +78,23 @@ class LogViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val speechState: StateFlow<SpeechState> = speechManager.state
+        .map { it.forOwner(OWNER) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, SpeechState.Idle)
 
-    // Elapsed timer (seconds since workout start)
-    private val _elapsedSeconds = MutableStateFlow(0L)
-    val elapsedSeconds: StateFlow<Long> = _elapsedSeconds.asStateFlow()
+    val micLevel: StateFlow<Float> = speechManager.level
+
+    private var restJob: Job? = null
 
     init {
         viewModelScope.launch {
-            speechManager.state.collect { state ->
-                if (state is SpeechState.Result) {
-                    if (isMusicCommand(state.text)) {
-                        playDefaultPrTrack()
-                    } else {
-                        handleVoiceResult(state.text)
-                    }
-                }
-            }
-        }
-        // Timer
-        viewModelScope.launch {
-            while (true) {
-                delay(1000)
-                val session = activeSession.value
-                if (session != null) {
-                    _elapsedSeconds.value = (System.currentTimeMillis() - session.startTime) / 1000
+            speechManager.state.collectLatest { state ->
+                if (state is SpeechState.Result && state.owner == OWNER) {
+                    if (isMusicCommand(state.text)) playDefaultPrTrack() else handleVoiceResult(state.text)
+                    // Consumed, so a later subscriber can't replay the same set.
+                    speechManager.consume(OWNER)
+                } else if (state is SpeechState.Error && state.owner == OWNER) {
+                    delay(3500)
+                    speechManager.consume(OWNER)
                 }
             }
         }
@@ -98,19 +107,22 @@ class LogViewModel @Inject constructor(
     fun endWorkout() {
         viewModelScope.launch {
             if (_uiState.value.isLockedIn) dndManager.disable()
-            activeSession.value?.let { session ->
+            restJob?.cancel()
+            speechManager.release(OWNER)
+            activeSession?.let { session ->
                 repository.endSession(session)
-                _uiState.value = _uiState.value.copy(endedSessionId = session.id, isLockedIn = false, isResting = false)
+                _uiState.update { it.copy(endedSessionId = session.id, isLockedIn = false, isResting = false) }
             }
         }
     }
 
     fun clearEndedSession() {
-        _uiState.value = _uiState.value.copy(endedSessionId = null)
+        _uiState.update { it.copy(endedSessionId = null) }
     }
 
     fun startListening() {
-        speechManager.startListening()
+        _uiState.update { it.copy(parseError = null) }
+        speechManager.startListening(OWNER)
     }
 
     fun stopListening() {
@@ -119,20 +131,17 @@ class LogViewModel @Inject constructor(
 
     private fun handleVoiceResult(text: String) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isParsing = true, parseError = null)
+            _uiState.update { it.copy(isParsing = true, parseError = null) }
             runCatching { voiceParser.parse(text) }
                 .onSuccess { parsed ->
-                    _uiState.value = _uiState.value.copy(
-                        lastParsedSet = parsed,
-                        showConfirmation = true,
-                        isParsing = false
-                    )
+                    _uiState.update {
+                        it.copy(lastParsedSet = parsed, showConfirmation = true, isParsing = false)
+                    }
                 }
                 .onFailure { error ->
-                    _uiState.value = _uiState.value.copy(
-                        isParsing = false,
-                        parseError = error.message ?: "Could not parse"
-                    )
+                    _uiState.update {
+                        it.copy(isParsing = false, parseError = error.message ?: "Could not parse")
+                    }
                 }
         }
     }
@@ -148,16 +157,15 @@ class LogViewModel @Inject constructor(
             val track = repository.getDefaultPrTrack()
             if (track != null) {
                 musicController.play(track)
-                speechManager.resetState()
             } else {
-                _uiState.value = _uiState.value.copy(parseError = "No PR track saved")
+                _uiState.update { it.copy(parseError = "No PR track saved") }
             }
         }
     }
 
     fun confirmSet() {
         val parsed = _uiState.value.lastParsedSet ?: return
-        val session = activeSession.value ?: return
+        val session = activeSession ?: return
 
         viewModelScope.launch {
             repository.logSet(
@@ -173,46 +181,62 @@ class LogViewModel @Inject constructor(
                     rawVoiceInput = parsed.rawInput
                 )
             )
-            _uiState.value = LogUiState(isLockedIn = _uiState.value.isLockedIn)
-            speechManager.resetState()
+            _uiState.update { LogUiState(isLockedIn = it.isLockedIn) }
             startRestTimer()
         }
     }
 
-    // Rest timer
+    // Rest timer. Counts down against the wall clock so it can't drift, and
+    // a new set replaces the running countdown instead of racing it.
     private fun startRestTimer() {
         val duration = settingsStore.restDuration.value
-        _uiState.value = _uiState.value.copy(isResting = true, restTimerRemaining = duration)
-        viewModelScope.launch {
-            var remaining = duration
-            while (remaining > 0) {
-                delay(1000)
-                remaining--
-                _uiState.value = _uiState.value.copy(restTimerRemaining = remaining)
+        val endsAt = System.currentTimeMillis() + duration * 1000L
+        restJob?.cancel()
+        _uiState.update { it.copy(isResting = true, restTimerRemaining = duration, restTimerTotal = duration) }
+        restJob = viewModelScope.launch {
+            while (true) {
+                val left = ((endsAt - System.currentTimeMillis() + 999) / 1000).toInt()
+                if (left <= 0) break
+                _uiState.update { it.copy(restTimerRemaining = left) }
+                delay(200)
             }
-            _uiState.value = _uiState.value.copy(isResting = false, restTimerRemaining = 0)
-            // TODO: vibrate on completion
+            _uiState.update { it.copy(isResting = false, restTimerRemaining = 0) }
+            buzz()
         }
     }
 
     fun skipRestTimer() {
-        _uiState.value = _uiState.value.copy(isResting = false, restTimerRemaining = 0)
+        restJob?.cancel()
+        _uiState.update { it.copy(isResting = false, restTimerRemaining = 0) }
+    }
+
+    private fun buzz() {
+        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            context.getSystemService(VibratorManager::class.java)?.defaultVibrator
+        } else {
+            context.getSystemService(Vibrator::class.java)
+        }
+        vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 180, 120, 180), -1))
     }
 
     // Lock-in mode
     fun toggleLockIn() {
         val newState = !_uiState.value.isLockedIn
-        _uiState.value = _uiState.value.copy(isLockedIn = newState)
+        _uiState.update { it.copy(isLockedIn = newState) }
         if (newState) dndManager.enable() else dndManager.disable()
     }
 
     fun discardSet() {
-        _uiState.value = LogUiState()
-        speechManager.resetState()
+        _uiState.update { it.copy(lastParsedSet = null, showConfirmation = false, parseError = null) }
     }
 
     override fun onCleared() {
         super.onCleared()
-        speechManager.destroy()
+        if (_uiState.value.isLockedIn) dndManager.disable()
+        speechManager.release(OWNER)
+    }
+
+    private companion object {
+        const val OWNER = "log"
     }
 }

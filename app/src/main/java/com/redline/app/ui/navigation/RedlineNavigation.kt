@@ -1,6 +1,9 @@
 package com.redline.app.ui.navigation
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -13,6 +16,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -35,6 +41,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
@@ -101,7 +108,11 @@ fun RedlineNavHost() {
         NavHost(
             navController = navController,
             startDestination = Routes.HOME,
-            modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars)
+            modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars),
+            enterTransition = { fadeIn(tween(260, delayMillis = 60)) + scaleIn(tween(320), initialScale = 0.98f) },
+            exitTransition = { fadeOut(tween(160)) },
+            popEnterTransition = { fadeIn(tween(260, delayMillis = 60)) },
+            popExitTransition = { fadeOut(tween(160)) }
         ) {
             composable(Routes.HOME) { HomeScreen(navController) }
             composable(Routes.TRAIN) { LogScreen(navController) }
@@ -128,6 +139,28 @@ fun RedlineNavHost() {
                 )
                 com.redline.app.ui.progress.ExerciseHistoryScreen(exerciseKey = key)
             }
+        }
+
+        AnimatedVisibility(
+            visible = showPill,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(160.dp)
+                    .background(
+                        // Opaque from the pill's middle down, so nothing shows
+                        // beside its rounded ends.
+                        Brush.verticalGradient(
+                            0f to Surface.copy(alpha = 0f),
+                            0.4f to Surface.copy(alpha = 0.88f),
+                            0.62f to Surface
+                        )
+                    )
+            )
         }
 
         AnimatedVisibility(
@@ -159,12 +192,13 @@ private fun FloatingNavPill(
         PillItem(Routes.HOME, "Home", Icons.Outlined.Home, Icons.Filled.Home),
         PillItem(Routes.TRAIN, "Train", Icons.Outlined.Mic, Icons.Filled.Mic),
         PillItem(Routes.SOCIAL, "Social", Icons.Outlined.People, Icons.Filled.People),
-        PillItem(Routes.INSIGHTS, "Stats", Icons.Outlined.Insights, Icons.Filled.Insights)
+        PillItem(Routes.INSIGHTS, "Progress", Icons.Outlined.Insights, Icons.Filled.Insights)
     )
 
     Row(
         modifier = Modifier
-            .padding(bottom = 28.dp)
+            .navigationBarsPadding()
+            .padding(bottom = 12.dp)
             .clip(RoundedCornerShape(32.dp))
             .background(SurfaceVariant.copy(alpha = 0.92f))
             .border(1.dp, Outline, RoundedCornerShape(32.dp))
@@ -179,6 +213,7 @@ private fun FloatingNavPill(
                     .clip(RoundedCornerShape(24.dp))
                     .background(if (selected) Red500.copy(alpha = 0.12f) else Color.Transparent)
                     .clickable { onNavigate(item.route) }
+                    .animateContentSize(tween(220))
                     .padding(horizontal = 20.dp, vertical = 10.dp),
                 contentAlignment = Alignment.Center
             ) {

@@ -101,15 +101,15 @@ fun ExerciseHistoryScreen(
                         .padding(horizontal = 14.dp, vertical = 10.dp)
                 ) {
                     set.weight?.let {
-                        Text("${it.clean()} ${set.unit}", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                        Text("${it.clean()} ${set.unit}", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, modifier = Modifier.alignByBaseline())
                         Spacer(modifier = Modifier.width(8.dp))
                     }
                     set.reps?.let {
-                        Text("x $it", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
+                        Text("× $it", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.alignByBaseline())
                     }
                     set.rpe?.let {
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("RPE ${it.clean()}", style = MaterialTheme.typography.bodyMedium, color = OnSurfaceVariant)
+                        Text("RPE ${it.clean()}", style = MaterialTheme.typography.bodyMedium, color = OnSurfaceVariant, modifier = Modifier.alignByBaseline())
                     }
                 }
             }
