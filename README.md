@@ -79,9 +79,19 @@ Kotlin, Jetpack Compose with Material 3, Hilt with KSP, Room, Navigation-Compose
 gradlew.bat assembleDebug    # Windows
 ./gradlew installDebug       # to a connected device
 ./gradlew testDebugUnitTest  # unit tests
+./gradlew assembleDemo       # release speed plus the demo hooks, for screen recordings
 ```
 
 Requires JDK 17 and the Android SDK with `ANDROID_HOME` set. The APK lands in `app/build/outputs/apk/debug/`.
+
+**Recording a demo:** the `demo` build is R8-minified and not debuggable, so animations run at release speed, and it keeps the debug-only `DemoSpeechReceiver`. An emulator has no microphone, so the receiver feeds a transcript through the same states a real recognition produces, and the parser, UI and database handle it as usual. Arm it, then tap the mic:
+
+```bash
+adb shell am broadcast -n com.redline.app/.demo.DemoSpeechReceiver \
+    -a com.redline.app.DEMO_SPEECH --ez arm true --es text "bench 185 for 8 RPE 8"
+```
+
+It is signed with the debug key, so it installs over a debug build and keeps its data.
 
 **First run on the phone:** grant the microphone permission when prompted, and grant notification-policy access from Settings if you want the do-not-disturb toggle to work. Two optional API keys go in the in-app Settings screen: a USDA FoodData Central key for calorie lookups, and an LLM endpoint URL for the remote voice parser. Both features degrade quietly when their key is blank.
 
@@ -103,6 +113,7 @@ app/src/main/java/com/redline/app/
                         social, settings, workout detail, exercise history,
                         navigation, theme, components
 app/src/test/           TempoAnalyzerTest
+app/src/debug/          DemoSpeechReceiver (debug and demo builds only)
 ```
 
 ---

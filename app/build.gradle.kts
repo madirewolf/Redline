@@ -28,6 +28,21 @@ android {
                 "proguard-rules.pro"
             )
         }
+        // Release speed (R8, not debuggable) plus the debug-only demo hooks,
+        // for screen recordings. Signed with the debug key so it installs
+        // over a debug build and keeps its data.
+        create("demo") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += "release"
+        }
+    }
+
+    sourceSets {
+        getByName("demo") {
+            java.srcDir("src/debug/java")
+            manifest.srcFile("src/debug/AndroidManifest.xml")
+        }
     }
 
     compileOptions {

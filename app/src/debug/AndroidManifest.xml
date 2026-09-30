@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!-- Debug builds only: lets adb stand in for the microphone. -->
+        <receiver
+            android:name=".demo.DemoSpeechReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.redline.app.DEMO_SPEECH" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>
