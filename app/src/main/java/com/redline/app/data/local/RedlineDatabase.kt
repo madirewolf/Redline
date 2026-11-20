@@ -2,6 +2,7 @@ package com.redline.app.data.local
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import com.redline.app.data.local.dao.SampleDataDao
 import com.redline.app.data.local.dao.WorkoutDao
 import com.redline.app.data.local.entity.CalorieEntry
 import com.redline.app.data.local.entity.ExerciseSet
@@ -16,4 +17,5 @@ import com.redline.app.data.local.entity.WorkoutSession
 )
 abstract class RedlineDatabase : RoomDatabase() {
     abstract fun workoutDao(): WorkoutDao
+    abstract fun sampleDataDao(): SampleDataDao
 }
