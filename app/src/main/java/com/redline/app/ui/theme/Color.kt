@@ -15,11 +15,11 @@ import androidx.compose.ui.graphics.Color
  *   surfaceContainerHigh  chips and wells inside a card, dialogs
  *
  * Every text and icon pair here clears WCAG AA (4.5:1 for text, 3:1 for
- * outlines and icons); scripts/contrast.py checks it.
+ * outlines and icons); ColorContrastTest checks it.
  */
 
 internal val RedlineDarkColors = darkColorScheme(
-    primary = Color(0xFFF05252),
+    primary = Color(0xFFF25757),
     onPrimary = Color(0xFF1F0306),
     primaryContainer = Color(0xFF5C1116),
     onPrimaryContainer = Color(0xFFFFD9D7),
@@ -62,7 +62,7 @@ internal val RedlineLightColors = lightColorScheme(
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFFFDAD7),
     onPrimaryContainer = Color(0xFF410005),
-    inversePrimary = Color(0xFFF05252),
+    inversePrimary = Color(0xFFF25757),
     secondary = Color(0xFF5C5C64),
     onSecondary = Color(0xFFFFFFFF),
     secondaryContainer = Color(0xFFE6E6EA),
