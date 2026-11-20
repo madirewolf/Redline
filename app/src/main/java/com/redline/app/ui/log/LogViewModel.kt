@@ -123,8 +123,10 @@ class LogViewModel @Inject constructor(
             restJob?.cancel()
             speechManager.release(OWNER)
             activeSession?.let { session ->
-                repository.endSession(session)
-                _uiState.update { it.copy(endedSessionId = session.id, isLockedIn = false, isResting = false) }
+                val kept = repository.endSession(session)
+                _uiState.update {
+                    it.copy(endedSessionId = session.id.takeIf { kept }, isLockedIn = false, isResting = false)
+                }
             }
         }
     }

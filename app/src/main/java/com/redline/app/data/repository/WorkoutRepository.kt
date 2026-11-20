@@ -42,8 +42,14 @@ class WorkoutRepository @Inject constructor(
         return workoutDao.insertSession(WorkoutSession())
     }
 
-    suspend fun endSession(session: WorkoutSession) {
+    /** Ends the session. One with no sets is discarded instead; returns whether it was kept. */
+    suspend fun endSession(session: WorkoutSession): Boolean {
+        if (workoutDao.getSetCountForSession(session.id) == 0) {
+            workoutDao.deleteSession(session)
+            return false
+        }
         workoutDao.updateSession(session.copy(endTime = System.currentTimeMillis()))
+        return true
     }
 
     suspend fun logSet(set: ExerciseSet): Long {

@@ -22,6 +22,9 @@ interface WorkoutDao {
     @Update
     suspend fun updateSession(session: WorkoutSession)
 
+    @Delete
+    suspend fun deleteSession(session: WorkoutSession)
+
     @Query("SELECT * FROM workout_sessions ORDER BY startTime DESC")
     fun getAllSessions(): Flow<List<WorkoutSession>>
 

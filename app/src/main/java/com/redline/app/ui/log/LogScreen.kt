@@ -308,10 +308,15 @@ private fun ActiveWorkoutView(
             onDismissRequest = { confirmEnd = false },
             title = { Text("End workout?") },
             text = {
-                Text("${plural(sets.size, "set")} in ${formatDuration(elapsed)}. It'll be saved to your history.")
+                Text(
+                    if (sets.isEmpty()) "Nothing's been logged yet, so this workout won't be saved."
+                    else "${plural(sets.size, "set")} in ${formatDuration(elapsed)}. It'll be saved to your history."
+                )
             },
             confirmButton = {
-                TextButton(onClick = { confirmEnd = false; onEndWorkout() }) { Text("End workout") }
+                TextButton(onClick = { confirmEnd = false; onEndWorkout() }) {
+                    Text(if (sets.isEmpty()) "Discard" else "End workout")
+                }
             },
             dismissButton = {
                 TextButton(onClick = { confirmEnd = false }) { Text("Keep going") }
