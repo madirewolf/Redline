@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -114,6 +114,19 @@ class MotivationViewModel @Inject constructor(
         }
 
         fun isYouTube(url: String): Boolean = url.contains("youtube.com") || url.contains("youtu.be")
+
+        /** A YouTube search results page rather than one video, like the sample videos. */
+        fun isYouTubeSearch(url: String): Boolean = isYouTube(url) && url.contains("/results?search_query=")
+
+        /** What the row says under the title. */
+        fun sourceLabel(video: MotivationalVideo): String = when {
+            isYouTubeSearch(video.url) -> "YouTube search"
+            video.type == "youtube" || isYouTube(video.url) -> "YouTube"
+            else -> hostOf(video.url) ?: "Video"
+        }
+
+        private fun hostOf(url: String): String? =
+            runCatching { java.net.URI(url.trim()).host }.getOrNull()?.removePrefix("www.")
     }
 }
 
@@ -228,13 +241,20 @@ private fun VideoRow(video: MotivationalVideo, onOpen: () -> Unit, onDelete: () 
             .padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Surface(shape = CircleShape, color = colors.primaryContainer, modifier = Modifier.size(40.dp)) {
-            Icon(
-                Icons.Default.PlayArrow,
-                contentDescription = null,
-                tint = colors.onPrimaryContainer,
-                modifier = Modifier.padding(8.dp)
-            )
+        // A 16:9 tile where a thumbnail would be; no images are fetched.
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = colors.primaryContainer,
+            modifier = Modifier.size(width = 64.dp, height = 36.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    Icons.Default.PlayArrow,
+                    contentDescription = null,
+                    tint = colors.onPrimaryContainer,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
         }
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -246,7 +266,7 @@ private fun VideoRow(video: MotivationalVideo, onOpen: () -> Unit, onDelete: () 
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                if (video.type == "youtube") "YouTube" else Uri.parse(video.url).host ?: "Video",
+                MotivationViewModel.sourceLabel(video),
                 style = MaterialTheme.typography.bodySmall,
                 color = colors.onSurfaceVariant
             )

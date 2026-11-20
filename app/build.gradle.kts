@@ -21,7 +21,13 @@ android {
     }
 
     buildTypes {
+        // SAMPLE_DATA shows Settings > Sample data, which loads a month of
+        // made-up workouts to look at the charts with. Never in release.
+        getByName("debug") {
+            buildConfigField("boolean", "SAMPLE_DATA", "true")
+        }
         release {
+            buildConfigField("boolean", "SAMPLE_DATA", "false")
             isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -33,6 +39,7 @@ android {
         // over a debug build and keeps its data.
         create("demo") {
             initWith(getByName("release"))
+            buildConfigField("boolean", "SAMPLE_DATA", "true")
             signingConfig = signingConfigs.getByName("debug")
             matchingFallbacks += "release"
         }
@@ -56,6 +63,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     composeOptions {

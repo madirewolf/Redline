@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
@@ -53,6 +54,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.redline.app.BuildConfig
 import com.redline.app.ui.components.RedlineTopBar
 import com.redline.app.ui.components.ScreenPadding
 import com.redline.app.ui.components.SectionCard
@@ -274,6 +276,8 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMo
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Done)
                 )
             }
+
+            if (BuildConfig.SAMPLE_DATA) SampleDataSection()
         }
     }
 }
@@ -289,6 +293,45 @@ private fun SettingRow(title: String, body: String, control: @Composable () -> U
             Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         control()
+    }
+}
+
+/** Debug and demo builds only: a month of made-up data to see every chart filled in. */
+@Composable
+private fun SampleDataSection(viewModel: SampleDataViewModel = hiltViewModel()) {
+    val loaded by viewModel.isLoaded.collectAsStateWithLifecycle()
+    val busy by viewModel.busy.collectAsStateWithLifecycle()
+    val message by viewModel.message.collectAsStateWithLifecycle()
+    val colors = MaterialTheme.colorScheme
+
+    SectionLabel("Sample data", Modifier.padding(top = 8.dp))
+    SectionCard {
+        Text(
+            "Fills the app with a month of made-up workouts, meals and videos; removing it leaves your own entries alone.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Button(
+            onClick = viewModel::load,
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Load a month of sample workouts") }
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = viewModel::clear,
+            enabled = loaded && !busy,
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Remove sample data") }
+        message?.let {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                it,
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.onSurfaceVariant,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+            )
+        }
     }
 }
 
