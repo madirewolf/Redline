@@ -60,11 +60,11 @@ class RemoteVoiceParser @Inject constructor(
             if (response.isBlank()) return failure("Endpoint returned an empty body")
             Result.success(parseResponse(JSONObject(response), input))
         } catch (e: SocketTimeoutException) {
-            failure("No answer within ${(CONNECT_TIMEOUT_MS + READ_TIMEOUT_MS) / 1000} seconds")
+            failure("${uri.hostAndPort()} didn't answer in time")
         } catch (e: UnknownHostException) {
             failure("Could not find ${uri.host}")
         } catch (e: ConnectException) {
-            failure("Nothing is listening at ${uri.host}${if (uri.port > 0) ":${uri.port}" else ""}")
+            failure("Nothing is listening at ${uri.hostAndPort()}")
         } catch (e: UnknownServiceException) {
             failure("Android blocks plain http:// here. Use an https:// endpoint.")
         } catch (e: JSONException) {
@@ -102,6 +102,8 @@ class RemoteVoiceParser @Inject constructor(
 
     private fun JSONObject.optNullableFloat(name: String): Float? =
         if (!has(name) || isNull(name)) null else optDouble(name).takeIf { !it.isNaN() }?.toFloat()
+
+    private fun URI.hostAndPort(): String = if (port > 0) "$host:$port" else host
 
     private fun <T> failure(message: String): Result<T> = Result.failure(IOException(message))
 

@@ -69,6 +69,7 @@ import com.redline.app.ui.components.ScreenPadding
 import com.redline.app.ui.components.SectionCard
 import com.redline.app.ui.components.compact
 import com.redline.app.ui.components.formatClock
+import com.redline.app.ui.components.formatDuration
 import com.redline.app.ui.components.grouped
 import com.redline.app.ui.components.plural
 import com.redline.app.ui.components.rememberNow
@@ -353,7 +354,7 @@ private fun WorkoutCard(summary: WorkoutSummary, onClick: () -> Unit) {
     val start = Instant.ofEpochMilli(session.startTime).atZone(ZoneId.systemDefault())
     val dayName = start.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.getDefault())
     val time = start.format(DateTimeFormatter.ofPattern("h:mm a"))
-    val durationMin = session.endTime?.let { (it - session.startTime) / 60000 }
+    val duration = session.endTime?.let { formatDuration((it - session.startTime) / 1000) }
     val colors = MaterialTheme.colorScheme
 
     Row(
@@ -389,7 +390,7 @@ private fun WorkoutCard(summary: WorkoutSummary, onClick: () -> Unit) {
             Text(
                 text = buildString {
                     append(time)
-                    durationMin?.let { append("  ·  $it min") }
+                    duration?.let { append("  ·  $it") }
                     if (summary.volume > 0) append("  ·  ${summary.volume.compact()} ${summary.unit}")
                 },
                 style = MaterialTheme.typography.labelMedium,

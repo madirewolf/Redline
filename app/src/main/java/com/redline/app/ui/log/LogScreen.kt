@@ -92,12 +92,14 @@ import androidx.navigation.NavController
 import com.redline.app.data.local.entity.ExerciseSet
 import com.redline.app.data.repository.SessionState
 import com.redline.app.ui.components.LiveDot
+import com.redline.app.ui.components.RedlineTopBar
 import com.redline.app.ui.components.ScreenPadding
 import com.redline.app.ui.components.SetEditorDialog
 import com.redline.app.ui.components.toDraft
 import com.redline.app.ui.components.plural
 import com.redline.app.ui.components.cleanNum
 import com.redline.app.ui.components.formatClock
+import com.redline.app.ui.components.formatDuration
 import com.redline.app.ui.components.grouped
 import com.redline.app.ui.components.rememberNow
 import com.redline.app.ui.navigation.Routes
@@ -173,7 +175,10 @@ fun LogScreen(
     when (val state = sessionState) {
         // Wait for Room rather than flash "Ready to train?" over a running workout.
         SessionState.Loading -> Box(Modifier.fillMaxSize())
-        SessionState.None -> IdleView(onStartWorkout = { viewModel.startWorkout() })
+        SessionState.None -> IdleView(
+            onStartWorkout = { viewModel.startWorkout() },
+            onBack = { navController.popBackStack() }
+        )
         is SessionState.Active -> ActiveWorkoutView(
             startTime = state.session.startTime,
             sets = sets,
@@ -199,9 +204,17 @@ fun LogScreen(
 }
 
 @Composable
-private fun IdleView(onStartWorkout: () -> Unit) {
+private fun IdleView(onStartWorkout: () -> Unit, onBack: () -> Unit) {
+    Column(Modifier.fillMaxSize()) {
+        RedlineTopBar(title = "", onBack = onBack)
+        IdleContent(onStartWorkout, Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun IdleContent(onStartWorkout: () -> Unit, modifier: Modifier) {
     Column(
-        modifier = Modifier.fillMaxSize().navigationBarsPadding().padding(horizontal = ScreenPadding, vertical = 32.dp),
+        modifier = modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = ScreenPadding, vertical = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -295,7 +308,7 @@ private fun ActiveWorkoutView(
             onDismissRequest = { confirmEnd = false },
             title = { Text("End workout?") },
             text = {
-                Text("${plural(sets.size, "set")} in ${elapsed / 60} min. It'll be saved to your history.")
+                Text("${plural(sets.size, "set")} in ${formatDuration(elapsed)}. It'll be saved to your history.")
             },
             confirmButton = {
                 TextButton(onClick = { confirmEnd = false; onEndWorkout() }) { Text("End workout") }
@@ -634,21 +647,36 @@ private fun SetCard(set: ExerciseSet, number: Int, isNew: Boolean, onClick: () -
             Text(number.toString(), style = MaterialTheme.typography.labelMedium, color = muted)
         }
         Spacer(modifier = Modifier.width(12.dp))
-        Text(
-            buildAnnotatedString {
-                set.weight?.let {
-                    withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = onSurface)) { append(it.cleanNum()) }
-                    withStyle(SpanStyle(color = muted, fontSize = 13.sp)) { append(" ${set.unit}") }
-                }
-                set.reps?.let {
-                    if (set.weight != null) withStyle(SpanStyle(color = muted)) { append("  ×  ") }
-                    withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = onSurface)) { append(it.toString()) }
-                    withStyle(SpanStyle(color = muted, fontSize = 13.sp)) { append(if (it == 1) " rep" else " reps") }
-                }
-            },
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.weight(1f)
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                buildAnnotatedString {
+                    set.weight?.let {
+                        withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = onSurface)) { append(it.cleanNum()) }
+                        withStyle(SpanStyle(color = muted, fontSize = 13.sp)) { append(" ${set.unit}") }
+                    }
+                    set.reps?.let {
+                        if (set.weight != null) withStyle(SpanStyle(color = muted)) { append("  ×  ") }
+                        withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = onSurface)) { append(it.toString()) }
+                        withStyle(SpanStyle(color = muted, fontSize = 13.sp)) { append(if (it == 1) " rep" else " reps") }
+                    }
+                },
+                style = MaterialTheme.typography.bodyLarge
+            )
+            // Notes and a saved tempo score, so the row shows everything the set holds.
+            val detail = listOfNotNull(
+                set.notes?.takeIf { it.isNotBlank() },
+                set.failureProximityScore?.let { "Failure score $it" }
+            ).joinToString(" · ")
+            if (detail.isNotEmpty()) {
+                Text(
+                    detail,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = muted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
         set.rpe?.let {
             RpeChip(it)
             Spacer(modifier = Modifier.width(12.dp))

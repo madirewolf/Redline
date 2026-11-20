@@ -41,6 +41,7 @@ import com.redline.app.ui.components.ScreenPadding
 import com.redline.app.ui.components.SectionCard
 import com.redline.app.ui.components.SetEditorDialog
 import com.redline.app.ui.components.cleanNum
+import com.redline.app.ui.components.formatDuration
 import com.redline.app.ui.components.grouped
 import com.redline.app.ui.components.plural
 import com.redline.app.ui.components.toDraft
@@ -74,7 +75,7 @@ fun WorkoutDetailScreen(onBack: () -> Unit, viewModel: WorkoutDetailViewModel = 
         val s = session ?: return@Column
 
         val allSets = groups.flatMap { it.sets }
-        val durationMin = s.endTime?.let { (it - s.startTime) / 60000 }
+        val duration = s.endTime?.let { formatDuration((it - s.startTime) / 1000) }
         val volume = allSets.sumOf { ((it.weight ?: 0f) * (it.reps ?: 0)).toDouble() }.toLong()
         val unit = allSets.firstOrNull { it.weight != null }?.unit ?: "lbs"
 
@@ -93,7 +94,7 @@ fun WorkoutDetailScreen(onBack: () -> Unit, viewModel: WorkoutDetailViewModel = 
             item {
                 SectionCard(contentPadding = 0.dp) {
                     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp)) {
-                        Stat(durationMin?.let { "$it min" } ?: "–", "Duration", Modifier.weight(1f))
+                        Stat(duration ?: "–", "Duration", Modifier.weight(1f))
                         Stat(allSets.size.toString(), "Sets", Modifier.weight(1f))
                         Stat(if (volume > 0) "${volume.grouped()} $unit" else "–", "Volume", Modifier.weight(1f))
                     }

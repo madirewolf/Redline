@@ -11,6 +11,17 @@ fun formatClock(seconds: Long): String {
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
 
+/** Workout length for people, not clocks: "<1 min", "42 min", "1 h 5 min". */
+fun formatDuration(seconds: Long): String {
+    val minutes = seconds / 60
+    return when {
+        minutes < 1 -> "<1 min"
+        minutes < 60 -> "$minutes min"
+        minutes % 60 == 0L -> "${minutes / 60} h"
+        else -> "${minutes / 60} h ${minutes % 60} min"
+    }
+}
+
 /** 185 for a whole number, 182.5 otherwise. */
 fun Float.cleanNum(): String {
     val tenths = (this * 10).roundToLong()

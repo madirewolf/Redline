@@ -127,15 +127,17 @@ private fun ProgressCard(summary: ExerciseProgress, onClick: () -> Unit) {
                 Spacer(modifier = Modifier.height(6.dp))
                 StatusChip(summary.status)
             }
-            summary.latestEstimatedOneRepMax?.let {
+            val headline = summary.latestEstimatedOneRepMax?.let { it.roundToInt() to "est. 1RM" }
+                ?: summary.latestBestReps?.let { it to "top set reps" }
+            headline?.let { (value, label) ->
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
-                        text = it.roundToInt().toString(),
+                        text = value.toString(),
                         style = MaterialTheme.typography.headlineSmall.merge(Tabular),
                         fontWeight = FontWeight.SemiBold,
                         color = colors.onSurface
                     )
-                    Text("est. 1RM", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
+                    Text(label, style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
                 }
             }
             Icon(
@@ -153,9 +155,15 @@ private fun ProgressCard(summary: ExerciseProgress, onClick: () -> Unit) {
         Spacer(modifier = Modifier.height(12.dp))
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Metric("Volume", summary.totalVolume.toLong().compact())
-            Metric("Sets", summary.setCount.toString())
-            Metric("Best 1RM", summary.bestEstimatedOneRepMax?.roundToInt()?.toString() ?: "–")
+            if (summary.isBodyweight) {
+                Metric("Reps", summary.totalReps.toLong().compact())
+                Metric("Sets", summary.setCount.toString())
+                Metric("Weight", "Bodyweight")
+            } else {
+                Metric("Volume", summary.totalVolume.toLong().compact())
+                Metric("Sets", summary.setCount.toString())
+                Metric("Best 1RM", summary.bestEstimatedOneRepMax?.roundToInt()?.toString() ?: "–")
+            }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -250,6 +258,26 @@ private fun statusColor(status: ProgressStatus): Color = when (status) {
 private fun insight(summary: ExerciseProgress) = buildAnnotatedString {
     if (summary.lastThreeSame) {
         append("Same load and reps for 3 sessions. Change the weight, reps, tempo or how close you go to failure.")
+        return@buildAnnotatedString
+    }
+    if (summary.isBodyweight) {
+        val latest = summary.latestBestReps
+        val previous = summary.previousBestReps
+        if (latest == null || previous == null) {
+            append("Tracked by reps. Log another session to compare.")
+            return@buildAnnotatedString
+        }
+        val diff = latest - previous
+        withStyle(SpanStyle(color = statusColor(summary.status), fontWeight = FontWeight.SemiBold)) {
+            append(
+                when {
+                    diff > 0 -> "▲ ${plural(diff, "rep")}"
+                    diff < 0 -> "▼ ${plural(-diff, "rep")}"
+                    else -> "● Same reps"
+                }
+            )
+        }
+        append(if (diff == 0) " as last session" else " since last session")
         return@buildAnnotatedString
     }
     val trend = summary.trendPercent

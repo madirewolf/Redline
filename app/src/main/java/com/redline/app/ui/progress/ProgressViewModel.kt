@@ -31,8 +31,16 @@ data class ExerciseProgress(
     val setCount: Int,
     val latestFailureScore: Int?,
     val lastThreeSame: Boolean,
-    val trendPoints: List<Float>
-)
+    val trendPoints: List<Float>,
+    /** Reps across every set; how bodyweight lifts are measured. */
+    val totalReps: Int = 0,
+    /** Most reps in one set, this session and the session before. */
+    val latestBestReps: Int? = null,
+    val previousBestReps: Int? = null
+) {
+    /** No set had a weight, so there's no 1RM to estimate; reps tell the story instead. */
+    val isBodyweight: Boolean get() = bestEstimatedOneRepMax == null
+}
 
 enum class ProgressStatus(val label: String) {
     Progressing("Progressing"),
@@ -48,69 +56,81 @@ class ProgressViewModel @Inject constructor(
     val uiState: StateFlow<ProgressUiState> = repository.getAllSets()
         .map { sets -> ProgressUiState(buildSummaries(sets), isLoading = false) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ProgressUiState())
+}
 
-    private fun buildSummaries(sets: List<ExerciseSet>): List<ExerciseProgress> {
-        return sets
-            .groupBy { ExerciseCatalog.groupingKey(it.canonicalExerciseKey, it.exerciseName) }
-            .map { (key, exerciseSets) -> buildSummary(key, exerciseSets) }
-            .sortedWith(
-                compareByDescending<ExerciseProgress> { it.status == ProgressStatus.Stagnating }
-                    .thenByDescending { it.latestEstimatedOneRepMax ?: 0f }
-                    .thenBy { it.exerciseName }
-            )
-    }
+/** One card per lift, stalled lifts first, then the strongest. */
+internal fun buildSummaries(sets: List<ExerciseSet>): List<ExerciseProgress> {
+    return sets
+        .groupBy { ExerciseCatalog.groupingKey(it.canonicalExerciseKey, it.exerciseName) }
+        .map { (key, exerciseSets) -> buildSummary(key, exerciseSets) }
+        .sortedWith(
+            compareByDescending<ExerciseProgress> { it.status == ProgressStatus.Stagnating }
+                .thenByDescending { it.latestEstimatedOneRepMax ?: 0f }
+                .thenBy { it.exerciseName }
+        )
+}
 
-    private fun buildSummary(key: String, sets: List<ExerciseSet>): ExerciseProgress {
-        val ordered = sets.sortedByDescending { it.timestamp }
-        val sessionBests = ordered
-            .groupBy { it.sessionId }
-            .map { (_, sessionSets) ->
-                sessionSets.maxByOrNull { it.estimatedOneRepMax() ?: 0f }
-            }
-            .filterNotNull()
-            .sortedByDescending { it.timestamp }
-
-        val latest = sessionBests.firstOrNull()
-        val previous = sessionBests.drop(1).firstOrNull()
-        val latestE1rm = latest?.estimatedOneRepMax()
-        val previousE1rm = previous?.estimatedOneRepMax()
-        val bestE1rm = ordered.mapNotNull { it.estimatedOneRepMax() }.maxOrNull()
-        val trendPercent = if (latestE1rm != null && previousE1rm != null && previousE1rm > 0f) {
-            ((latestE1rm - previousE1rm) / previousE1rm) * 100f
-        } else {
-            null
+private fun buildSummary(key: String, sets: List<ExerciseSet>): ExerciseProgress {
+    val ordered = sets.sortedByDescending { it.timestamp }
+    val sessionBests = ordered
+        .groupBy { it.sessionId }
+        .map { (_, sessionSets) ->
+            // Heaviest estimated max, or the most reps when there's no weight.
+            sessionSets.maxWithOrNull(compareBy({ it.estimatedOneRepMax() ?: 0f }, { it.reps ?: 0 }))
         }
-        val lastThreeSame = sessionBests.take(3).size == 3 &&
-            sessionBests.take(3).map { it.loadSignature() }.distinct().size == 1
-        val status = when {
-            lastThreeSame -> ProgressStatus.Stagnating
-            trendPercent == null -> ProgressStatus.Building
-            trendPercent >= 2.5f -> ProgressStatus.Progressing
-            trendPercent <= -2.5f -> ProgressStatus.Regressing
-            abs(trendPercent) < 2.5f -> ProgressStatus.Building
+        .filterNotNull()
+        .sortedByDescending { it.timestamp }
+
+    val latest = sessionBests.firstOrNull()
+    val previous = sessionBests.drop(1).firstOrNull()
+    val latestE1rm = latest?.estimatedOneRepMax()
+    val previousE1rm = previous?.estimatedOneRepMax()
+    val bestE1rm = ordered.mapNotNull { it.estimatedOneRepMax() }.maxOrNull()
+    val trendPercent = if (latestE1rm != null && previousE1rm != null && previousE1rm > 0f) {
+        ((latestE1rm - previousE1rm) / previousE1rm) * 100f
+    } else {
+        null
+    }
+    val lastThreeSame = sessionBests.take(3).size == 3 &&
+        sessionBests.take(3).map { it.loadSignature() }.distinct().size == 1
+    val latestReps = latest?.reps
+    val previousReps = previous?.reps
+    val status = when {
+        lastThreeSame -> ProgressStatus.Stagnating
+        bestE1rm == null && latestReps != null && previousReps != null -> when {
+            latestReps > previousReps -> ProgressStatus.Progressing
+            latestReps < previousReps -> ProgressStatus.Regressing
             else -> ProgressStatus.Building
         }
-
-        return ExerciseProgress(
-            exerciseKey = key,
-            exerciseName = ordered.firstOrNull()?.exerciseName ?: "Unknown Exercise",
-            status = status,
-            latestEstimatedOneRepMax = latestE1rm,
-            bestEstimatedOneRepMax = bestE1rm,
-            trendPercent = trendPercent,
-            totalVolume = ordered.sumOf { ((it.weight ?: 0f) * (it.reps ?: 0)).toDouble() }.toFloat(),
-            setCount = ordered.size,
-            latestFailureScore = ordered.firstOrNull { it.failureProximityScore != null }?.failureProximityScore,
-            lastThreeSame = lastThreeSame,
-            trendPoints = sessionBests.reversed().mapNotNull { it.estimatedOneRepMax() }.takeLast(8)
-        )
+        trendPercent == null -> ProgressStatus.Building
+        trendPercent >= 2.5f -> ProgressStatus.Progressing
+        trendPercent <= -2.5f -> ProgressStatus.Regressing
+        abs(trendPercent) < 2.5f -> ProgressStatus.Building
+        else -> ProgressStatus.Building
     }
 
-    private fun ExerciseSet.loadSignature(): String {
-        val weightPart = weight?.roundToInt()?.toString() ?: "bodyweight"
-        val repsPart = reps?.toString() ?: "unknown"
-        return "$weightPart:$repsPart"
-    }
+    return ExerciseProgress(
+        exerciseKey = key,
+        exerciseName = ordered.firstOrNull()?.exerciseName ?: "Unknown Exercise",
+        status = status,
+        latestEstimatedOneRepMax = latestE1rm,
+        bestEstimatedOneRepMax = bestE1rm,
+        trendPercent = trendPercent,
+        totalVolume = ordered.sumOf { ((it.weight ?: 0f) * (it.reps ?: 0)).toDouble() }.toFloat(),
+        setCount = ordered.size,
+        latestFailureScore = ordered.firstOrNull { it.failureProximityScore != null }?.failureProximityScore,
+        lastThreeSame = lastThreeSame,
+        trendPoints = sessionBests.reversed().mapNotNull { it.estimatedOneRepMax() }.takeLast(8),
+        totalReps = ordered.sumOf { it.reps ?: 0 },
+        latestBestReps = latestReps,
+        previousBestReps = previousReps
+    )
+}
+
+private fun ExerciseSet.loadSignature(): String {
+    val weightPart = weight?.roundToInt()?.toString() ?: "bodyweight"
+    val repsPart = reps?.toString() ?: "unknown"
+    return "$weightPart:$repsPart"
 }
 
 /** Epley estimate: weight × (1 + reps / 30). Null without both a weight and reps. */
