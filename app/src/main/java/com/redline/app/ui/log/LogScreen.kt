@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -37,6 +38,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -92,7 +95,6 @@ import androidx.navigation.NavController
 import com.redline.app.data.local.entity.ExerciseSet
 import com.redline.app.data.repository.SessionState
 import com.redline.app.ui.components.LiveDot
-import com.redline.app.ui.components.RedlineTopBar
 import com.redline.app.ui.components.ScreenPadding
 import com.redline.app.ui.components.SetEditorDialog
 import com.redline.app.ui.components.toDraft
@@ -148,13 +150,22 @@ fun LogScreen(
 
     uiState.editor?.let { target ->
         when (target) {
-            SetEditorTarget.Pending -> SetEditorDialog(
-                title = "Edit set",
-                initial = uiState.lastParsedSet?.let(SetDraft::from) ?: SetDraft(unit = viewModel.defaultUnit),
-                confirmLabel = "Save set",
-                onSave = viewModel::saveFromEditor,
-                onDismiss = viewModel::closeEditor
-            )
+            is SetEditorTarget.Pending -> {
+                val count = target.run.count
+                // A lone run saves from the editor; one of several goes back to the card.
+                val alone = uiState.pendingRuns.size <= 1
+                SetEditorDialog(
+                    title = if (count > 1) "Edit $count sets" else "Edit set",
+                    initial = SetDraft.from(target.run.set),
+                    confirmLabel = when {
+                        !alone -> "Done"
+                        count > 1 -> "Save $count sets"
+                        else -> "Save set"
+                    },
+                    onSave = viewModel::saveFromEditor,
+                    onDismiss = viewModel::closeEditor
+                )
+            }
             SetEditorTarget.New -> SetEditorDialog(
                 title = "Add a set",
                 initial = SetDraft(unit = viewModel.defaultUnit),
@@ -175,10 +186,7 @@ fun LogScreen(
     when (val state = sessionState) {
         // Wait for Room rather than flash "Ready to train?" over a running workout.
         SessionState.Loading -> Box(Modifier.fillMaxSize())
-        SessionState.None -> IdleView(
-            onStartWorkout = { viewModel.startWorkout() },
-            onBack = { navController.popBackStack() }
-        )
+        SessionState.None -> IdleContent(onStartWorkout = { viewModel.startWorkout() }, Modifier.fillMaxSize())
         is SessionState.Active -> ActiveWorkoutView(
             startTime = state.session.startTime,
             sets = sets,
@@ -191,7 +199,8 @@ fun LogScreen(
             onStopListening = { viewModel.stopListening() },
             onConfirmSet = { viewModel.confirmSet() },
             onDiscardSet = { viewModel.discardSet() },
-            onEditPending = { viewModel.openEditor(SetEditorTarget.Pending) },
+            onDiscardRun = { viewModel.discardRun(it) },
+            onEditPending = { viewModel.openEditor(SetEditorTarget.Pending(it)) },
             onTypeSet = { viewModel.openEditor(SetEditorTarget.New) },
             onEditSaved = { viewModel.openEditor(SetEditorTarget.Saved(it)) },
             onEndWorkout = { viewModel.endWorkout() },
@@ -203,18 +212,14 @@ fun LogScreen(
     }
 }
 
-@Composable
-private fun IdleView(onStartWorkout: () -> Unit, onBack: () -> Unit) {
-    Column(Modifier.fillMaxSize()) {
-        RedlineTopBar(title = "", onBack = onBack)
-        IdleContent(onStartWorkout, Modifier.weight(1f))
-    }
-}
+/** Room left at the bottom for the floating nav pill: 54dp pill, 12dp under it, a little air above. */
+private val PillClearance = 74.dp
 
 @Composable
 private fun IdleContent(onStartWorkout: () -> Unit, modifier: Modifier) {
     Column(
-        modifier = modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = ScreenPadding, vertical = 32.dp),
+        modifier = modifier.fillMaxWidth().navigationBarsPadding()
+            .padding(start = ScreenPadding, end = ScreenPadding, top = 32.dp, bottom = PillClearance),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -266,7 +271,8 @@ private fun ActiveWorkoutView(
     onStopListening: () -> Unit,
     onConfirmSet: () -> Unit,
     onDiscardSet: () -> Unit,
-    onEditPending: () -> Unit,
+    onDiscardRun: (SetRun) -> Unit,
+    onEditPending: (SetRun) -> Unit,
     onTypeSet: () -> Unit,
     onEditSaved: (ExerciseSet) -> Unit,
     onEndWorkout: () -> Unit,
@@ -324,7 +330,10 @@ private fun ActiveWorkoutView(
         )
     }
 
-    Column(modifier = Modifier.fillMaxSize().navigationBarsPadding().padding(horizontal = ScreenPadding)) {
+    Column(
+        modifier = Modifier.fillMaxSize().navigationBarsPadding()
+            .padding(start = ScreenPadding, end = ScreenPadding, bottom = PillClearance)
+    ) {
         // Header: live timer, running totals, lock-in and end
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 12.dp),
@@ -423,17 +432,25 @@ private fun ActiveWorkoutView(
             }
         }
 
-        // Parsed set waiting for confirmation
+        // What was said, waiting for a yes
+        val runs = uiState.pendingRuns
         AnimatedVisibility(
-            visible = uiState.showConfirmation && uiState.lastParsedSet != null,
+            visible = uiState.showConfirmation && runs.isNotEmpty(),
             enter = fadeIn(tween(220)) + expandVertically(tween(260)),
             exit = fadeOut(tween(160)) + shrinkVertically(tween(220))
         ) {
-            uiState.lastParsedSet?.let { parsed ->
-                ConfirmationCard(
-                    parsed = parsed,
+            when {
+                runs.size == 1 -> ConfirmationCard(
+                    run = runs.single(),
+                    onSave = onConfirmSet,
+                    onEdit = { onEditPending(runs.single()) },
+                    onDiscard = onDiscardSet
+                )
+                runs.size > 1 -> MultiConfirmationCard(
+                    runs = runs,
                     onSave = onConfirmSet,
                     onEdit = onEditPending,
+                    onRemove = onDiscardRun,
                     onDiscard = onDiscardSet
                 )
             }
@@ -463,16 +480,20 @@ private fun ActiveWorkoutView(
                     Prompt("“${speechState.partial}”", MaterialTheme.colorScheme.onSurface, large = true)
                 isListening -> Prompt("Listening…", MaterialTheme.colorScheme.primary)
                 uiState.isParsing -> Prompt("Reading your set…", MaterialTheme.colorScheme.primary)
-                uiState.showConfirmation -> Prompt("Look right? Save it, or tap the mic to say it again", MaterialTheme.colorScheme.onSurfaceVariant)
+                uiState.showConfirmation -> Prompt(
+                    if (uiState.pendingSets.size > 1) "Look right? Save them, or tap the mic to say it again"
+                    else "Look right? Save it, or tap the mic to say it again",
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 uiState.parseError != null -> Prompt(uiState.parseError, MaterialTheme.colorScheme.error)
                 speechState is SpeechState.Error -> Prompt(speechState.message, MaterialTheme.colorScheme.error)
-                else -> Prompt("Tap and say “bench 185 for 8, RPE 8”", MaterialTheme.colorScheme.onSurfaceVariant)
+                else -> Prompt("Tap and say “bench 135 for 4 sets of 5”", MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
 
         // Mic
         Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
@@ -533,9 +554,9 @@ private fun MicButton(isListening: Boolean, level: Float, onClick: () -> Unit) {
 
     val red = MaterialTheme.colorScheme.primary
     val onRed = MaterialTheme.colorScheme.onPrimary
-    Box(modifier = Modifier.size(124.dp), contentAlignment = Alignment.Center) {
+    Box(modifier = Modifier.size(104.dp), contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val base = 38.dp.toPx()
+            val base = 34.dp.toPx()
             if (ringsAlpha > 0f) {
                 // Two rings a half-cycle apart, pushed out further when the voice is louder.
                 for (offset in listOf(0f, 0.5f)) {
@@ -556,7 +577,7 @@ private fun MicButton(isListening: Boolean, level: Float, onClick: () -> Unit) {
         }
         Box(
             modifier = Modifier
-                .size(76.dp)
+                .size(68.dp)
                 .clip(CircleShape)
                 .background(red)
                 .clickable(onClick = onClick, onClickLabel = if (isListening) "Stop listening" else "Say a set"),
@@ -565,7 +586,7 @@ private fun MicButton(isListening: Boolean, level: Float, onClick: () -> Unit) {
             Icon(
                 if (isListening) Icons.Default.Stop else Icons.Default.Mic,
                 contentDescription = if (isListening) "Stop listening" else "Say a set",
-                modifier = Modifier.size(34.dp),
+                modifier = Modifier.size(30.dp),
                 tint = onRed
             )
         }
@@ -702,14 +723,15 @@ private fun RpeChip(rpe: Float) {
     )
 }
 
-/** The parsed set, waiting for a yes. Incomplete sets can't be saved as they are. */
+/** The parsed set (or identical sets), waiting for a yes. Incomplete sets can't be saved as they are. */
 @Composable
 private fun ConfirmationCard(
-    parsed: ParsedSet,
+    run: SetRun,
     onSave: () -> Unit,
     onEdit: () -> Unit,
     onDiscard: () -> Unit
 ) {
+    val parsed = run.set
     val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(20.dp)
     Column(
@@ -748,6 +770,7 @@ private fun ConfirmationCard(
             )
             Spacer(modifier = Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+                if (run.count > 1) BigValue(run.count.toString(), "sets")
                 parsed.weight?.let { BigValue(it.cleanNum(), parsed.unit, highlight = true) }
                 BigValue(parsed.reps?.toString() ?: "?", if (parsed.reps == 1) "rep" else "reps")
                 parsed.rpe?.let { BigValue(it.cleanNum(), "RPE") }
@@ -783,7 +806,8 @@ private fun ConfirmationCard(
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.weight(1f).height(48.dp)
                     ) {
-                        Icon(Icons.Default.Check, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Save set")
+                        Icon(Icons.Default.Check, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+                        Text(if (run.count > 1) "Save ${run.count} sets" else "Save set")
                     }
                     OutlinedButton(
                         onClick = onEdit,
@@ -798,7 +822,8 @@ private fun ConfirmationCard(
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.weight(1f).height(48.dp)
                     ) {
-                        Icon(Icons.Default.Edit, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Fill in the set")
+                        Icon(Icons.Default.Edit, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+                        Text(if (run.count > 1) "Fill in the sets" else "Fill in the set")
                     }
                 }
             }
@@ -806,8 +831,129 @@ private fun ConfirmationCard(
     }
 }
 
+/** Several different sets from one breath ("135 for 4 sets of 5, then 122 for 10"), one row per run. */
+@Composable
+private fun MultiConfirmationCard(
+    runs: List<SetRun>,
+    onSave: () -> Unit,
+    onEdit: (SetRun) -> Unit,
+    onRemove: (SetRun) -> Unit,
+    onDiscard: () -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(20.dp)
+    val total = runs.sumOf { it.count }
+    val ready = runs.all { it.set.isComplete }
+    val raw = runs.first().set.rawInput
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+            .background(colors.surfaceContainer, shape)
+            .border(1.dp, colors.outlineVariant, shape)
+            .padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 18.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "${plural(total, "set")}  ·  ${sourceLabel(runs.first().set.source)}",
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = onDiscard) {
+                Icon(Icons.Default.Close, contentDescription = "Discard all", tint = colors.onSurfaceVariant)
+            }
+        }
+        Column(modifier = Modifier.padding(end = 12.dp)) {
+            if (raw.isNotBlank()) {
+                Text(
+                    "“$raw”",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontStyle = FontStyle.Italic,
+                    color = colors.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+            Column(
+                modifier = Modifier.heightIn(max = 232.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                runs.forEach { run -> RunRow(run, onClick = { onEdit(run) }, onRemove = { onRemove(run) }) }
+            }
+            if (!ready) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    "Tap a row marked ? to fill it in.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.error
+                )
+            }
+            Spacer(modifier = Modifier.height(14.dp))
+            Button(
+                onClick = onSave,
+                enabled = ready,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().height(48.dp)
+            ) {
+                Icon(Icons.Default.Check, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
+                Text("Save ${plural(total, "set")}")
+            }
+        }
+    }
+}
+
+@Composable
+private fun RunRow(run: SetRun, onClick: () -> Unit, onRemove: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val set = run.set
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(colors.surfaceContainerHigh)
+            .border(1.dp, if (set.isComplete) Color.Transparent else colors.error.copy(alpha = 0.6f), shape)
+            .clickable(onClickLabel = "Edit", onClick = onClick)
+            .padding(start = 12.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            "${run.count}×",
+            style = MaterialTheme.typography.titleMedium.merge(Tabular),
+            fontWeight = FontWeight.Bold,
+            color = colors.primary,
+            modifier = Modifier.width(36.dp)
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                if (set.hasKnownExercise) set.exerciseName else "Exercise?",
+                style = MaterialTheme.typography.titleSmall,
+                color = if (set.hasKnownExercise) colors.onSurface else colors.error,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                buildString {
+                    set.weight?.let { append("${it.cleanNum()} ${set.unit}  ×  ") }
+                    append(set.reps?.let { if (it == 1) "1 rep" else "$it reps" } ?: "? reps")
+                    set.rpe?.let { append("  ·  RPE ${it.cleanNum()}") }
+                    set.notes?.let { append("  ·  $it") }
+                },
+                style = MaterialTheme.typography.bodyMedium.merge(Tabular),
+                color = if (set.reps == null) colors.error else colors.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        IconButton(onClick = onRemove) {
+            Icon(Icons.Default.Close, contentDescription = "Remove these sets", tint = colors.onSurfaceVariant, modifier = Modifier.size(18.dp))
+        }
+    }
+}
+
 private fun sourceLabel(source: ParseSource) = when (source) {
     ParseSource.SEPARATED -> "Read with the “next” format"
+    ParseSource.CLAUDE -> "Read by Claude Haiku"
     ParseSource.REMOTE -> "Read by your parser endpoint"
     ParseSource.LOCAL -> "Read on this phone"
     ParseSource.MANUAL -> "Typed"

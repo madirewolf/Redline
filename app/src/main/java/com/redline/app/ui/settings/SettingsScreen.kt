@@ -18,11 +18,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -44,6 +47,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -55,6 +60,7 @@ import com.redline.app.ui.components.SectionLabel
 import com.redline.app.ui.components.formatClock
 import com.redline.app.ui.theme.RedlineTheme
 import com.redline.app.ui.theme.Tabular
+import com.redline.app.voice.ClaudeSetParser
 import com.redline.app.voice.RemoteVoiceParser
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -66,6 +72,9 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMo
     val restDuration by viewModel.restDuration.collectAsStateWithLifecycle()
     val usdaApiKey by viewModel.usdaApiKey.collectAsStateWithLifecycle()
     val endpointTest by viewModel.endpointTest.collectAsStateWithLifecycle()
+    val anthropicApiKey by viewModel.anthropicApiKey.collectAsStateWithLifecycle()
+    val claudeTest by viewModel.claudeTest.collectAsStateWithLifecycle()
+    var showKey by rememberSaveable { mutableStateOf(false) }
     val colors = MaterialTheme.colorScheme
 
     // The store trims what it saves; the field keeps what's typed, so a space
@@ -131,6 +140,69 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewMo
                             enabled = restDuration < MAX_REST
                         ) { Icon(Icons.Default.Add, contentDescription = "Longer rest") }
                     }
+                }
+            }
+
+            SectionLabel("Claude Haiku", Modifier.padding(top = 8.dp))
+            SectionCard {
+                Text(
+                    "Optional. With your own Anthropic API key, anything not in the \u201cnext\u201d format is read by " +
+                        "Claude Haiku, so you can talk normally: \u201c135 for 4 sets of 5, then 122 for 10.\u201d " +
+                        "The key stays on this phone and out of backups. Each read is billed to your Anthropic account, " +
+                        "and the phone reads the set itself if Claude can't be reached.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = anthropicApiKey,
+                    onValueChange = viewModel::setAnthropicApiKey,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Anthropic API key") },
+                    placeholder = { Text("sk-ant-\u2026") },
+                    supportingText = { Text("Create one at console.anthropic.com") },
+                    visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        if (anthropicApiKey.isNotEmpty()) {
+                            IconButton(onClick = { showKey = !showKey }) {
+                                Icon(
+                                    if (showKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = if (showKey) "Hide key" else "Show key"
+                                )
+                            }
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        autoCorrect = false,
+                        imeAction = ImeAction.Done
+                    )
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(
+                        onClick = viewModel::testClaude,
+                        enabled = anthropicApiKey.isNotBlank() && claudeTest != EndpointTest.Running
+                    ) { Text("Test key") }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    if (claudeTest == EndpointTest.Running) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    }
+                }
+                val claudeResult = claudeTest
+                if (claudeResult is EndpointTest.Passed || claudeResult is EndpointTest.Failed) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = when (claudeResult) {
+                            is EndpointTest.Passed -> "Working. \u201c${ClaudeSetParser.PROBE_TRANSCRIPT}\u201d came back as ${claudeResult.heard}."
+                            is EndpointTest.Failed -> "Not working: ${claudeResult.reason.trimEnd('.')}."
+                            else -> ""
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (claudeResult is EndpointTest.Passed) RedlineTheme.status.success else colors.error,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+                    )
                 }
             }
 

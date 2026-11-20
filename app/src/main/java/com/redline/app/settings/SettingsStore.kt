@@ -14,6 +14,18 @@ class SettingsStore @Inject constructor(
 ) {
     private val prefs = context.getSharedPreferences("redline_settings", Context.MODE_PRIVATE)
 
+    /** Kept in its own file so backup rules can leave it off the cloud and device transfers. */
+    private val secrets = context.getSharedPreferences(SECRETS_FILE, Context.MODE_PRIVATE)
+
+    private val _anthropicApiKey = MutableStateFlow(secrets.getString(KEY_ANTHROPIC_API_KEY, "").orEmpty())
+    val anthropicApiKey: StateFlow<String> = _anthropicApiKey.asStateFlow()
+
+    fun setAnthropicApiKey(value: String) {
+        val clean = value.trim()
+        secrets.edit().putString(KEY_ANTHROPIC_API_KEY, clean).apply()
+        _anthropicApiKey.value = clean
+    }
+
     private val _llmEndpoint = MutableStateFlow(prefs.getString(KEY_LLM_ENDPOINT, "").orEmpty())
     val llmEndpoint: StateFlow<String> = _llmEndpoint.asStateFlow()
 
@@ -65,6 +77,8 @@ class SettingsStore @Inject constructor(
     }
 
     companion object {
+        const val SECRETS_FILE = "redline_secrets"
+        private const val KEY_ANTHROPIC_API_KEY = "anthropic_api_key"
         private const val KEY_LLM_ENDPOINT = "llm_endpoint"
         private const val KEY_DEFAULT_UNIT = "default_unit"
         private const val KEY_USER_NAME = "user_name"

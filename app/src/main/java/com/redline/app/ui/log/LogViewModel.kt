@@ -14,6 +14,7 @@ import com.redline.app.data.repository.WorkoutRepository
 import com.redline.app.settings.SettingsStore
 import com.redline.app.ui.music.MusicController
 import com.redline.app.util.DndManager
+import com.redline.app.voice.ParseContext
 import com.redline.app.voice.ParsedSet
 import com.redline.app.ui.components.withDraft
 import com.redline.app.voice.SetDraft
@@ -39,10 +40,26 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/** Consecutive identical sets on the confirmation card, such as "4 sets of 135 × 5". */
+data class SetRun(val set: ParsedSet, val count: Int, val first: Int) {
+    val indices: IntRange get() = first until first + count
+}
+
+/** Groups back-to-back identical sets so the card shows "4 sets" once rather than four rows. */
+fun List<ParsedSet>.runs(): List<SetRun> {
+    val runs = mutableListOf<SetRun>()
+    forEachIndexed { i, set ->
+        val last = runs.lastOrNull()
+        if (last != null && last.set == set) runs[runs.lastIndex] = last.copy(count = last.count + 1)
+        else runs += SetRun(set, 1, i)
+    }
+    return runs
+}
+
 /** What the set editor is open for. */
 sealed interface SetEditorTarget {
-    /** The set waiting on the confirmation card. */
-    data object Pending : SetEditorTarget
+    /** One run of sets waiting on the confirmation card. */
+    data class Pending(val run: SetRun) : SetEditorTarget
     /** A set typed from scratch. */
     data object New : SetEditorTarget
     /** A set already in this workout. */
@@ -50,7 +67,8 @@ sealed interface SetEditorTarget {
 }
 
 data class LogUiState(
-    val lastParsedSet: ParsedSet? = null,
+    /** Every set the last thing said described, in order. */
+    val pendingSets: List<ParsedSet> = emptyList(),
     val showConfirmation: Boolean = false,
     val isParsing: Boolean = false,
     val parseError: String? = null,
@@ -60,7 +78,9 @@ data class LogUiState(
     val isResting: Boolean = false,
     val isLockedIn: Boolean = false,
     val editor: SetEditorTarget? = null
-)
+) {
+    val pendingRuns: List<SetRun> get() = pendingSets.runs()
+}
 
 @HiltViewModel
 class LogViewModel @Inject constructor(
@@ -147,10 +167,13 @@ class LogViewModel @Inject constructor(
     private fun handleVoiceResult(text: String) {
         viewModelScope.launch {
             _uiState.update { it.copy(isParsing = true, parseError = null) }
-            runCatching { voiceParser.parse(text) }
+            // A set that names no exercise ("then 225 for 5") continues the last one logged.
+            val last = currentSets.value.maxByOrNull { it.timestamp }
+            val context = ParseContext(last?.exerciseName, last?.canonicalExerciseKey)
+            runCatching { voiceParser.parseAll(text, context) }
                 .onSuccess { parsed ->
                     _uiState.update {
-                        it.copy(lastParsedSet = parsed, showConfirmation = true, isParsing = false)
+                        it.copy(pendingSets = parsed, showConfirmation = parsed.isNotEmpty(), isParsing = false)
                     }
                 }
                 .onFailure { error ->
@@ -181,10 +204,10 @@ class LogViewModel @Inject constructor(
     /** Unit a typed set starts in. */
     val defaultUnit: String get() = settingsStore.defaultUnit.value
 
-    /** Saves the set on the confirmation card. Incomplete sets go through the editor instead. */
+    /** Saves every set on the confirmation card. Incomplete sets go through the editor first. */
     fun confirmSet() {
-        val parsed = _uiState.value.lastParsedSet ?: return
-        if (parsed.isComplete) logSet(parsed)
+        val pending = _uiState.value.pendingSets
+        if (pending.isNotEmpty() && pending.all { it.isComplete }) logSets(pending)
     }
 
     fun openEditor(target: SetEditorTarget) {
@@ -197,11 +220,15 @@ class LogViewModel @Inject constructor(
 
     fun saveFromEditor(draft: SetDraft) {
         when (val target = _uiState.value.editor) {
-            SetEditorTarget.Pending -> {
-                val raw = _uiState.value.lastParsedSet?.rawInput.orEmpty()
-                draft.toParsedSet(raw)?.let(::logSet)
+            is SetEditorTarget.Pending -> {
+                val edited = draft.toParsedSet(target.run.set.rawInput) ?: return
+                val pending = _uiState.value.pendingSets
+                val updated = pending.mapIndexed { i, set -> if (i in target.run.indices) edited else set }
+                // A lone set saves straight from the editor, as before; a list goes back to the card.
+                if (pending.runs().size <= 1) logSets(updated)
+                else _uiState.update { it.copy(pendingSets = updated, editor = null) }
             }
-            SetEditorTarget.New -> draft.toParsedSet(rawInput = "")?.let(::logSet)
+            SetEditorTarget.New -> draft.toParsedSet(rawInput = "")?.let { logSets(listOf(it)) }
             is SetEditorTarget.Saved -> {
                 val updated = target.set.withDraft(draft) ?: return
                 viewModelScope.launch { repository.updateSet(updated) }
@@ -216,22 +243,28 @@ class LogViewModel @Inject constructor(
         closeEditor()
     }
 
-    private fun logSet(parsed: ParsedSet) {
+    private fun logSets(sets: List<ParsedSet>) {
         val session = activeSession ?: return
+        if (sets.isEmpty()) return
         viewModelScope.launch {
-            repository.logSet(
-                ExerciseSet(
-                    sessionId = session.id,
-                    exerciseName = parsed.exerciseName,
-                    canonicalExerciseKey = parsed.canonicalExerciseKey,
-                    weight = parsed.weight,
-                    unit = parsed.unit,
-                    reps = parsed.reps,
-                    rpe = parsed.rpe,
-                    notes = parsed.notes,
-                    rawVoiceInput = parsed.rawInput.ifBlank { null }
+            // A millisecond apart, so they keep the order they were said in.
+            val now = System.currentTimeMillis()
+            sets.forEachIndexed { i, parsed ->
+                repository.logSet(
+                    ExerciseSet(
+                        sessionId = session.id,
+                        exerciseName = parsed.exerciseName,
+                        canonicalExerciseKey = parsed.canonicalExerciseKey,
+                        weight = parsed.weight,
+                        unit = parsed.unit,
+                        reps = parsed.reps,
+                        rpe = parsed.rpe,
+                        notes = parsed.notes,
+                        rawVoiceInput = parsed.rawInput.ifBlank { null },
+                        timestamp = now + i
+                    )
                 )
-            )
+            }
             _uiState.update { LogUiState(isLockedIn = it.isLockedIn) }
             startRestTimer()
         }
@@ -278,7 +311,13 @@ class LogViewModel @Inject constructor(
     }
 
     fun discardSet() {
-        _uiState.update { it.copy(lastParsedSet = null, showConfirmation = false, parseError = null) }
+        _uiState.update { it.copy(pendingSets = emptyList(), showConfirmation = false, parseError = null) }
+    }
+
+    /** Drops one run from the card, and the card with it when nothing is left. */
+    fun discardRun(run: SetRun) {
+        val left = _uiState.value.pendingSets.filterIndexed { i, _ -> i !in run.indices }
+        if (left.isEmpty()) discardSet() else _uiState.update { it.copy(pendingSets = left) }
     }
 
     override fun onCleared() {

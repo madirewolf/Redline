@@ -23,6 +23,12 @@ object LocalSetParser {
     private val atWeightPattern = Regex("""(?<![a-z])(?:at|with)\s+($NUM)(?![\d.a-z])""")
     private val numberPattern = Regex("""(?<![a-z0-9.])$NUM(?![a-z0-9.])""")
 
+    // "and then 122 for 10", "then 145 for 3", "135 for 5 and 145 for 3"
+    private val segmentPattern = Regex("""(?<![a-z])(?:and then|then|after that|followed by|and(?=\s+\d))(?![a-z])""")
+    // "4 sets of 5", "3 sets x 8 reps", or a bare "4 sets" with the reps said elsewhere
+    private val setCountPattern = Regex("""(?<![a-z0-9.])(\d+)\s*sets?(?![a-z])(?:\s*(?:of|x)\s*(\d+)(?:\s*(?:reps?|times?)(?![a-z]))?)?""")
+    const val MAX_SET_COUNT = 10
+
     private val hardKeywords = listOf("heavy", "hard", "tough", "struggled", "grind", "grinding", "maxed", "barely")
     private val easyKeywords = listOf("easy", "light", "smooth", "fast", "flew up", "warmup", "warm up")
     private val noteIndicators = Regex("""(?<![a-z])(felt|was|kind of|pretty|really|last|barely)(?![a-z])""")
@@ -100,6 +106,65 @@ object LocalSetParser {
             needsClarification = exercise == null || fields.reps == null,
             rawInput = input,
             source = ParseSource.LOCAL
+        )
+    }
+
+    /**
+     * Freeform speech that may hold several sets: "135 for 4 sets of 5 and then 122 for 10".
+     * Splits on "then" (and on "and" before a number), expands "N sets of R" into N sets,
+     * and lets a part with no exercise continue the one before it, or the last one logged.
+     * A plain single set comes out exactly as [parseFreeform] reads it.
+     */
+    fun parseMany(input: String, defaultUnit: String, context: ParseContext = ParseContext()): List<ParsedSet> {
+        val text = normalize(input)
+        val segments = text.split(segmentPattern)
+            .map { it.trim() }
+            .filter { numberPattern.containsMatchIn(it) || ExerciseCatalog.match(it) != null }
+        // Split only when every piece is a whole set, so "bench 135 and 5 reps" stays one set.
+        if (segments.size > 1) {
+            val parsed = parseSegments(segments, input, defaultUnit, context)
+            if (parsed.all { (set, _) -> set.reps != null }) return parsed.flatMap { (set, count) -> List(count) { set } }
+        }
+        if (setCountPattern.containsMatchIn(text)) {
+            return parseSegments(listOf(text), input, defaultUnit, context).flatMap { (set, count) -> List(count) { set } }
+        }
+        return listOf(continueExercise(parseFreeform(input, defaultUnit), context.lastExerciseName, context.lastExerciseKey))
+    }
+
+    /** Each segment as a set and how many times it was done; a segment with no exercise continues the one before. */
+    private fun parseSegments(
+        segments: List<String>,
+        input: String,
+        defaultUnit: String,
+        context: ParseContext
+    ): List<Pair<ParsedSet, Int>> {
+        var carriedName = context.lastExerciseName
+        var carriedKey = context.lastExerciseKey
+        return segments.map { segment ->
+            var count = 1
+            val rewritten = setCountPattern.find(segment)?.let { m ->
+                count = (m.groupValues[1].toIntOrNull() ?: 1).coerceIn(1, MAX_SET_COUNT)
+                val reps = m.groupValues[2]
+                segment.replaceRange(m.range, if (reps.isNotEmpty()) " $reps reps " else " ")
+            } ?: segment
+            val parsed = continueExercise(parseFreeform(rewritten, defaultUnit), carriedName, carriedKey)
+                .copy(rawInput = input)
+            if (parsed.hasKnownExercise) {
+                carriedName = parsed.exerciseName
+                carriedKey = parsed.canonicalExerciseKey
+            }
+            parsed to count
+        }
+    }
+
+    /** Gives a set with no exercise the one it most likely continues. */
+    private fun continueExercise(set: ParsedSet, name: String?, key: String?): ParsedSet {
+        if (set.hasKnownExercise || name.isNullOrBlank() || name == UNKNOWN_EXERCISE) return set
+        return set.copy(
+            exerciseName = name,
+            canonicalExerciseKey = key,
+            confidence = (set.confidence + 0.25f).coerceAtMost(1f),
+            needsClarification = set.reps == null
         )
     }
 

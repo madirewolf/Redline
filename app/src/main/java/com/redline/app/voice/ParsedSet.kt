@@ -1,7 +1,7 @@
 package com.redline.app.voice
 
 /** Which parse tier produced a set. Shown on the confirmation card so the tiering is visible. */
-enum class ParseSource { SEPARATED, REMOTE, LOCAL, MANUAL }
+enum class ParseSource { SEPARATED, CLAUDE, REMOTE, LOCAL, MANUAL }
 
 data class ParsedSet(
     val exerciseName: String,
@@ -23,3 +23,12 @@ data class ParsedSet(
     val isComplete: Boolean
         get() = hasKnownExercise && reps != null && reps > 0
 }
+
+/**
+ * What the parsers know beyond the words themselves. A set said without an
+ * exercise ("then 122 for 10") continues the last one logged.
+ */
+data class ParseContext(
+    val lastExerciseName: String? = null,
+    val lastExerciseKey: String? = null
+)

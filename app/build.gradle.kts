@@ -92,5 +92,8 @@ dependencies {
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
 
+    // Claude Haiku parses freeform set descriptions when the user adds their own API key.
+    implementation(libs.anthropic)
+
     testImplementation(libs.junit)
 }

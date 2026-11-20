@@ -94,7 +94,7 @@ fun RedlineNavHost() {
     val currentRoute = navBackStackEntry?.destination?.route
 
     // Top-level screens get the pill; everything you drill into gets a back arrow instead.
-    val pillScreens = setOf(Routes.HOME, Routes.TEMPO, Routes.INSIGHTS)
+    val pillScreens = setOf(Routes.HOME, Routes.TRAIN, Routes.TEMPO, Routes.INSIGHTS)
     val showPill = currentRoute in pillScreens
     val back: () -> Unit = { navController.popBackStack() }
     val page = MaterialTheme.colorScheme.background
@@ -135,8 +135,9 @@ fun RedlineNavHost() {
             }
         }
 
+        // Train lays itself out above the pill, so it needs no fade behind it.
         AnimatedVisibility(
-            visible = showPill,
+            visible = showPill && currentRoute != Routes.TRAIN,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter)
@@ -209,7 +210,7 @@ private fun FloatingNavPill(
                     .background(if (selected) colors.primaryContainer else Color.Transparent)
                     .clickable(role = Role.Tab, onClickLabel = item.label) { onNavigate(item.route) }
                     .animateContentSize(tween(220))
-                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Row(
