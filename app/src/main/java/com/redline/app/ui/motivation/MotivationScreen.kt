@@ -39,6 +39,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -125,6 +126,7 @@ fun MotivationScreen(onBack: () -> Unit, viewModel: MotivationViewModel = hiltVi
     var title by rememberSaveable { mutableStateOf("") }
     var url by rememberSaveable { mutableStateOf("") }
     var urlError by rememberSaveable { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
 
     Column(modifier = Modifier.fillMaxSize()) {
         RedlineTopBar(title = "Motivation", onBack = onBack)
@@ -173,6 +175,7 @@ fun MotivationScreen(onBack: () -> Unit, viewModel: MotivationViewModel = hiltVi
                         onClick = {
                             if (viewModel.addVideo(title, url)) {
                                 title = ""; url = ""
+                                focusManager.clearFocus()
                             } else {
                                 urlError = true
                             }
