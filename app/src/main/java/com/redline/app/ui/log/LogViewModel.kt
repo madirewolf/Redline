@@ -15,6 +15,8 @@ import com.redline.app.settings.SettingsStore
 import com.redline.app.ui.music.MusicController
 import com.redline.app.util.DndManager
 import com.redline.app.voice.ParsedSet
+import com.redline.app.ui.components.withDraft
+import com.redline.app.voice.SetDraft
 import com.redline.app.voice.SpeechRecognizerManager
 import com.redline.app.voice.SpeechState
 import com.redline.app.voice.VoiceParser
@@ -37,6 +39,16 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/** What the set editor is open for. */
+sealed interface SetEditorTarget {
+    /** The set waiting on the confirmation card. */
+    data object Pending : SetEditorTarget
+    /** A set typed from scratch. */
+    data object New : SetEditorTarget
+    /** A set already in this workout. */
+    data class Saved(val set: ExerciseSet) : SetEditorTarget
+}
+
 data class LogUiState(
     val lastParsedSet: ParsedSet? = null,
     val showConfirmation: Boolean = false,
@@ -46,7 +58,8 @@ data class LogUiState(
     val restTimerRemaining: Int = 0,
     val restTimerTotal: Int = 0,
     val isResting: Boolean = false,
-    val isLockedIn: Boolean = false
+    val isLockedIn: Boolean = false,
+    val editor: SetEditorTarget? = null
 )
 
 @HiltViewModel
@@ -163,10 +176,46 @@ class LogViewModel @Inject constructor(
         }
     }
 
+    /** Unit a typed set starts in. */
+    val defaultUnit: String get() = settingsStore.defaultUnit.value
+
+    /** Saves the set on the confirmation card. Incomplete sets go through the editor instead. */
     fun confirmSet() {
         val parsed = _uiState.value.lastParsedSet ?: return
-        val session = activeSession ?: return
+        if (parsed.isComplete) logSet(parsed)
+    }
 
+    fun openEditor(target: SetEditorTarget) {
+        _uiState.update { it.copy(editor = target) }
+    }
+
+    fun closeEditor() {
+        _uiState.update { it.copy(editor = null) }
+    }
+
+    fun saveFromEditor(draft: SetDraft) {
+        when (val target = _uiState.value.editor) {
+            SetEditorTarget.Pending -> {
+                val raw = _uiState.value.lastParsedSet?.rawInput.orEmpty()
+                draft.toParsedSet(raw)?.let(::logSet)
+            }
+            SetEditorTarget.New -> draft.toParsedSet(rawInput = "")?.let(::logSet)
+            is SetEditorTarget.Saved -> {
+                val updated = target.set.withDraft(draft) ?: return
+                viewModelScope.launch { repository.updateSet(updated) }
+                closeEditor()
+            }
+            null -> Unit
+        }
+    }
+
+    fun deleteSet(set: ExerciseSet) {
+        viewModelScope.launch { repository.deleteSet(set) }
+        closeEditor()
+    }
+
+    private fun logSet(parsed: ParsedSet) {
+        val session = activeSession ?: return
         viewModelScope.launch {
             repository.logSet(
                 ExerciseSet(
@@ -178,7 +227,7 @@ class LogViewModel @Inject constructor(
                     reps = parsed.reps,
                     rpe = parsed.rpe,
                     notes = parsed.notes,
-                    rawVoiceInput = parsed.rawInput
+                    rawVoiceInput = parsed.rawInput.ifBlank { null }
                 )
             )
             _uiState.update { LogUiState(isLockedIn = it.isLockedIn) }

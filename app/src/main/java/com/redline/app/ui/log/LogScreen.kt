@@ -43,7 +43,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DoNotDisturb
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Stop
@@ -51,6 +53,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -89,18 +92,21 @@ import androidx.navigation.NavController
 import com.redline.app.data.local.entity.ExerciseSet
 import com.redline.app.data.repository.SessionState
 import com.redline.app.ui.components.LiveDot
+import com.redline.app.ui.components.ScreenPadding
+import com.redline.app.ui.components.SetEditorDialog
+import com.redline.app.ui.components.toDraft
+import com.redline.app.ui.components.plural
 import com.redline.app.ui.components.cleanNum
 import com.redline.app.ui.components.formatClock
 import com.redline.app.ui.components.grouped
 import com.redline.app.ui.components.rememberNow
 import com.redline.app.ui.navigation.Routes
-import com.redline.app.ui.theme.OnSurfaceVariant
-import com.redline.app.ui.theme.Outline
-import com.redline.app.ui.theme.Red400
-import com.redline.app.ui.theme.Red500
-import com.redline.app.ui.theme.SurfaceContainer
-import com.redline.app.ui.theme.SurfaceVariant
+import com.redline.app.ui.theme.RedlineTheme
 import com.redline.app.ui.theme.Tabular
+import com.redline.app.voice.ExerciseCatalog
+import com.redline.app.voice.ParseSource
+import com.redline.app.voice.ParsedSet
+import com.redline.app.voice.SetDraft
 import com.redline.app.voice.SpeechState
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -138,6 +144,32 @@ fun LogScreen(
         ActivityResultContracts.RequestPermission()
     ) { granted -> hasAudioPermission = granted }
 
+    uiState.editor?.let { target ->
+        when (target) {
+            SetEditorTarget.Pending -> SetEditorDialog(
+                title = "Edit set",
+                initial = uiState.lastParsedSet?.let(SetDraft::from) ?: SetDraft(unit = viewModel.defaultUnit),
+                confirmLabel = "Save set",
+                onSave = viewModel::saveFromEditor,
+                onDismiss = viewModel::closeEditor
+            )
+            SetEditorTarget.New -> SetEditorDialog(
+                title = "Add a set",
+                initial = SetDraft(unit = viewModel.defaultUnit),
+                confirmLabel = "Save set",
+                onSave = viewModel::saveFromEditor,
+                onDismiss = viewModel::closeEditor
+            )
+            is SetEditorTarget.Saved -> SetEditorDialog(
+                title = "Edit set",
+                initial = target.set.toDraft(),
+                onSave = viewModel::saveFromEditor,
+                onDismiss = viewModel::closeEditor,
+                onDelete = { viewModel.deleteSet(target.set) }
+            )
+        }
+    }
+
     when (val state = sessionState) {
         // Wait for Room rather than flash "Ready to train?" over a running workout.
         SessionState.Loading -> Box(Modifier.fillMaxSize())
@@ -154,6 +186,9 @@ fun LogScreen(
             onStopListening = { viewModel.stopListening() },
             onConfirmSet = { viewModel.confirmSet() },
             onDiscardSet = { viewModel.discardSet() },
+            onEditPending = { viewModel.openEditor(SetEditorTarget.Pending) },
+            onTypeSet = { viewModel.openEditor(SetEditorTarget.New) },
+            onEditSaved = { viewModel.openEditor(SetEditorTarget.Saved(it)) },
             onEndWorkout = { viewModel.endWorkout() },
             onSkipRest = { viewModel.skipRestTimer() },
             onToggleLockIn = { viewModel.toggleLockIn() },
@@ -166,27 +201,31 @@ fun LogScreen(
 @Composable
 private fun IdleView(onStartWorkout: () -> Unit) {
     Column(
-        modifier = Modifier.fillMaxSize().navigationBarsPadding().padding(32.dp),
+        modifier = Modifier.fillMaxSize().navigationBarsPadding().padding(horizontal = ScreenPadding, vertical = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Box(
-            modifier = Modifier.size(96.dp).background(Red500.copy(alpha = 0.12f), CircleShape),
+            modifier = Modifier.size(88.dp).background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Filled.FitnessCenter, null, modifier = Modifier.size(44.dp), tint = Red500)
+            Icon(Icons.Filled.FitnessCenter, null, modifier = Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary)
         }
-        Spacer(modifier = Modifier.height(28.dp))
-        Text("Ready to train?", style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.onSurface)
+        Spacer(modifier = Modifier.height(24.dp))
+        Text("Ready to train?", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface)
         Spacer(modifier = Modifier.height(8.dp))
-        Text("Start a workout and log every set by voice.", style = MaterialTheme.typography.bodyLarge, color = OnSurfaceVariant, textAlign = TextAlign.Center)
-        Spacer(modifier = Modifier.height(48.dp))
+        Text(
+            "Start a workout, then log each set by saying it.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(40.dp))
         Button(
             onClick = onStartWorkout,
-            colors = ButtonDefaults.buttonColors(containerColor = Red500),
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth().height(56.dp)
-        ) { Text("Start Workout", fontSize = 18.sp, fontWeight = FontWeight.SemiBold) }
+        ) { Text("Start workout", style = MaterialTheme.typography.titleMedium) }
     }
 }
 
@@ -214,6 +253,9 @@ private fun ActiveWorkoutView(
     onStopListening: () -> Unit,
     onConfirmSet: () -> Unit,
     onDiscardSet: () -> Unit,
+    onEditPending: () -> Unit,
+    onTypeSet: () -> Unit,
+    onEditSaved: (ExerciseSet) -> Unit,
     onEndWorkout: () -> Unit,
     onSkipRest: () -> Unit,
     onToggleLockIn: () -> Unit,
@@ -226,7 +268,7 @@ private fun ActiveWorkoutView(
 
     // Group sets by exercise, in the order each exercise was first done.
     val rows = remember(sets) {
-        sets.groupBy { it.canonicalExerciseKey ?: it.exerciseName }
+        sets.groupBy { ExerciseCatalog.groupingKey(it.canonicalExerciseKey, it.exerciseName) }
             .flatMap { (key, exerciseSets) ->
                 listOf<TimelineRow>(TimelineRow.Heading(exerciseSets.first().exerciseName, exerciseSets.size, "h_$key")) +
                     exerciseSets.mapIndexed { i, set -> TimelineRow.SetRow(set, i + 1) }
@@ -253,22 +295,18 @@ private fun ActiveWorkoutView(
             onDismissRequest = { confirmEnd = false },
             title = { Text("End workout?") },
             text = {
-                Text(
-                    "${sets.size} ${if (sets.size == 1) "set" else "sets"} in ${elapsed / 60} min. It'll be saved to your history.",
-                    color = OnSurfaceVariant
-                )
+                Text("${plural(sets.size, "set")} in ${elapsed / 60} min. It'll be saved to your history.")
             },
             confirmButton = {
-                TextButton(onClick = { confirmEnd = false; onEndWorkout() }) { Text("End workout", color = Red500) }
+                TextButton(onClick = { confirmEnd = false; onEndWorkout() }) { Text("End workout") }
             },
             dismissButton = {
-                TextButton(onClick = { confirmEnd = false }) { Text("Keep going", color = OnSurfaceVariant) }
-            },
-            containerColor = SurfaceVariant
+                TextButton(onClick = { confirmEnd = false }) { Text("Keep going") }
+            }
         )
     }
 
-    Column(modifier = Modifier.fillMaxSize().navigationBarsPadding().padding(horizontal = 20.dp)) {
+    Column(modifier = Modifier.fillMaxSize().navigationBarsPadding().padding(horizontal = ScreenPadding)) {
         // Header: live timer, running totals, lock-in and end
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 12.dp),
@@ -289,11 +327,11 @@ private fun ActiveWorkoutView(
                     )
                     Text(
                         buildString {
-                            append("  ·  ${sets.size} ${if (sets.size == 1) "set" else "sets"}")
+                            append("  ·  ${plural(sets.size, "set")}")
                             if (volume > 0) append("  ·  ${volume.grouped()} $unit")
                         },
                         style = MaterialTheme.typography.bodyMedium,
-                        color = OnSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -303,8 +341,8 @@ private fun ActiveWorkoutView(
                 }) {
                     Icon(
                         if (uiState.isLockedIn) Icons.Default.DoNotDisturb else Icons.Default.NotificationsActive,
-                        contentDescription = "Lock In",
-                        tint = if (uiState.isLockedIn) Red500 else OnSurfaceVariant
+                        contentDescription = if (uiState.isLockedIn) "Lock-in on: notifications silenced" else "Lock in: silence notifications",
+                        tint = if (uiState.isLockedIn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 OutlinedButton(onClick = { confirmEnd = true }, shape = RoundedCornerShape(12.dp)) {
@@ -323,7 +361,12 @@ private fun ActiveWorkoutView(
                 ) {
                     Text("No sets yet", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                     Spacer(modifier = Modifier.height(4.dp))
-                    Text("Tap the mic and say your first set.", style = MaterialTheme.typography.bodyMedium, color = OnSurfaceVariant)
+                    Text(
+                        "Tap the mic and say your first set,\nor type it with the keyboard button.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
             LazyColumn(
@@ -340,21 +383,21 @@ private fun ActiveWorkoutView(
                         ) {
                             Text(
                                 row.name,
-                                style = MaterialTheme.typography.labelLarge,
-                                color = Red500,
-                                fontWeight = FontWeight.SemiBold,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.weight(1f)
                             )
                             Text(
-                                "${row.setCount} ${if (row.setCount == 1) "set" else "sets"}",
+                                plural(row.setCount, "set"),
                                 style = MaterialTheme.typography.labelMedium,
-                                color = OnSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         is TimelineRow.SetRow -> SetCard(
                             set = row.set,
                             number = row.number,
                             isNew = row.set.timestamp > maxOf(openedAt, System.currentTimeMillis() - 4000),
+                            onClick = { onEditSaved(row.set) },
                             modifier = Modifier.animateItemPlacement()
                         )
                     }
@@ -369,56 +412,12 @@ private fun ActiveWorkoutView(
             exit = fadeOut(tween(160)) + shrinkVertically(tween(220))
         ) {
             uiState.lastParsedSet?.let { parsed ->
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
-                        .background(SurfaceVariant, RoundedCornerShape(20.dp))
-                        .border(1.dp, Red500.copy(alpha = 0.35f), RoundedCornerShape(20.dp))
-                        .padding(18.dp)
-                ) {
-                    Text(
-                        "“${parsed.rawInput}”",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontStyle = FontStyle.Italic,
-                        color = OnSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(parsed.exerciseName, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-                        parsed.weight?.let { BigValue(it.cleanNum(), parsed.unit, highlight = true) }
-                        parsed.reps?.let { BigValue(it.toString(), if (it == 1) "rep" else "reps") }
-                        parsed.rpe?.let { BigValue(it.cleanNum(), "RPE") }
-                    }
-                    parsed.notes?.let {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(it, style = MaterialTheme.typography.bodyMedium, color = OnSurfaceVariant)
-                    }
-                    if (parsed.needsClarification) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text("Low confidence. Check before saving.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-                    }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(
-                            onClick = onConfirmSet,
-                            colors = ButtonDefaults.buttonColors(containerColor = Red500),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f).height(48.dp)
-                        ) {
-                            Icon(Icons.Default.Check, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Save set")
-                        }
-                        OutlinedButton(
-                            onClick = onDiscardSet,
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f).height(48.dp)
-                        ) {
-                            Icon(Icons.Default.Close, null, Modifier.size(18.dp), tint = OnSurfaceVariant); Spacer(Modifier.width(6.dp))
-                            Text("Discard", color = OnSurfaceVariant)
-                        }
-                    }
-                }
+                ConfirmationCard(
+                    parsed = parsed,
+                    onSave = onConfirmSet,
+                    onEdit = onEditPending,
+                    onDiscard = onDiscardSet
+                )
             }
         }
 
@@ -444,17 +443,25 @@ private fun ActiveWorkoutView(
             when {
                 speechState is SpeechState.Listening && speechState.partial.isNotBlank() ->
                     Prompt("“${speechState.partial}”", MaterialTheme.colorScheme.onSurface, large = true)
-                isListening -> Prompt("Listening…", Red400)
-                uiState.isParsing -> Prompt("Reading your set…", Red400)
-                uiState.showConfirmation -> Prompt("Look right? Save it, or tap to say it again", OnSurfaceVariant.copy(alpha = 0.7f))
+                isListening -> Prompt("Listening…", MaterialTheme.colorScheme.primary)
+                uiState.isParsing -> Prompt("Reading your set…", MaterialTheme.colorScheme.primary)
+                uiState.showConfirmation -> Prompt("Look right? Save it, or tap the mic to say it again", MaterialTheme.colorScheme.onSurfaceVariant)
                 uiState.parseError != null -> Prompt(uiState.parseError, MaterialTheme.colorScheme.error)
                 speechState is SpeechState.Error -> Prompt(speechState.message, MaterialTheme.colorScheme.error)
-                else -> Prompt("Tap and say “bench 185 for 8, RPE 8”", OnSurfaceVariant.copy(alpha = 0.7f))
+                else -> Prompt("Tap and say “bench 185 for 8, RPE 8”", MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
 
         // Mic
-        Box(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), contentAlignment = Alignment.Center) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                FilledTonalIconButton(onClick = onTypeSet, modifier = Modifier.size(52.dp)) {
+                    Icon(Icons.Default.Keyboard, contentDescription = "Type a set")
+                }
+            }
             MicButton(
                 isListening = isListening,
                 level = micLevel,
@@ -464,6 +471,7 @@ private fun ActiveWorkoutView(
                     else onMicTap()
                 }
             )
+            Spacer(modifier = Modifier.weight(1f))
         }
     }
 }
@@ -487,9 +495,9 @@ private fun BigValue(value: String, label: String, highlight: Boolean = false) {
             value,
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
-            color = if (highlight) Red500 else MaterialTheme.colorScheme.onSurface
+            color = if (highlight) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
         )
-        Text(label, style = MaterialTheme.typography.labelMedium, color = OnSurfaceVariant)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -505,6 +513,8 @@ private fun MicButton(isListening: Boolean, level: Float, onClick: () -> Unit) {
     val loudness by animateFloatAsState(if (isListening) level else 0f, tween(120), label = "loudness")
     val ringsAlpha by animateFloatAsState(if (isListening) 1f else 0f, tween(250), label = "ringsAlpha")
 
+    val red = MaterialTheme.colorScheme.primary
+    val onRed = MaterialTheme.colorScheme.onPrimary
     Box(modifier = Modifier.size(124.dp), contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val base = 38.dp.toPx()
@@ -513,32 +523,32 @@ private fun MicButton(isListening: Boolean, level: Float, onClick: () -> Unit) {
                 for (offset in listOf(0f, 0.5f)) {
                     val p = (phase + offset) % 1f
                     drawCircle(
-                        color = Red500.copy(alpha = (1f - p) * 0.35f * ringsAlpha),
+                        color = red.copy(alpha = (1f - p) * 0.35f * ringsAlpha),
                         radius = base + p * 24.dp.toPx() + loudness * 8.dp.toPx(),
                         style = Stroke(width = 2.dp.toPx())
                     )
                 }
                 drawCircle(
-                    color = Red500.copy(alpha = 0.18f * ringsAlpha),
+                    color = red.copy(alpha = 0.18f * ringsAlpha),
                     radius = base + loudness * 14.dp.toPx()
                 )
             } else {
-                drawCircle(color = Red500.copy(alpha = 0.10f), radius = base + 8.dp.toPx())
+                drawCircle(color = red.copy(alpha = 0.10f), radius = base + 8.dp.toPx())
             }
         }
         Box(
             modifier = Modifier
                 .size(76.dp)
                 .clip(CircleShape)
-                .background(Red500)
-                .clickable(onClick = onClick),
+                .background(red)
+                .clickable(onClick = onClick, onClickLabel = if (isListening) "Stop listening" else "Say a set"),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 if (isListening) Icons.Default.Stop else Icons.Default.Mic,
-                contentDescription = if (isListening) "Stop" else "Record",
+                contentDescription = if (isListening) "Stop listening" else "Say a set",
                 modifier = Modifier.size(34.dp),
-                tint = Color.White
+                tint = onRed
             )
         }
     }
@@ -551,9 +561,11 @@ private fun RestCard(remaining: Int, total: Int, onSkip: () -> Unit) {
         animationSpec = tween(1000, easing = LinearEasing),
         label = "rest"
     )
+    val track = MaterialTheme.colorScheme.outlineVariant
+    val red = MaterialTheme.colorScheme.primary
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
-            .background(SurfaceVariant, RoundedCornerShape(20.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(20.dp))
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -562,9 +574,9 @@ private fun RestCard(remaining: Int, total: Int, onSkip: () -> Unit) {
                 val stroke = 5.dp.toPx()
                 val arcSize = Size(size.width - stroke, size.height - stroke)
                 val topLeft = Offset(stroke / 2, stroke / 2)
-                drawArc(Outline, 0f, 360f, false, topLeft, arcSize, style = Stroke(stroke))
+                drawArc(track, 0f, 360f, false, topLeft, arcSize, style = Stroke(stroke))
                 drawArc(
-                    if (remaining <= 5) Red400 else Red500,
+                    red,
                     -90f, 360f * progress, false, topLeft, arcSize,
                     style = Stroke(stroke, cap = StrokeCap.Round)
                 )
@@ -579,14 +591,14 @@ private fun RestCard(remaining: Int, total: Int, onSkip: () -> Unit) {
         Spacer(modifier = Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text("Rest", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-            Text("${formatClock(total.toLong())} between sets", style = MaterialTheme.typography.bodyMedium, color = OnSurfaceVariant)
+            Text("${formatClock(total.toLong())} between sets", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        TextButton(onClick = onSkip) { Text("Skip", color = Red500) }
+        TextButton(onClick = onSkip) { Text("Skip") }
     }
 }
 
 @Composable
-private fun SetCard(set: ExerciseSet, number: Int, isNew: Boolean, modifier: Modifier = Modifier) {
+private fun SetCard(set: ExerciseSet, number: Int, isNew: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val timeFormat = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
     // A just-saved set slides in with a red glow that fades out.
     val glow = remember { Animatable(if (isNew) 1f else 0f) }
@@ -597,7 +609,10 @@ private fun SetCard(set: ExerciseSet, number: Int, isNew: Boolean, modifier: Mod
             glow.animateTo(0f, tween(2400))
         }
     }
-    val onSurface = MaterialTheme.colorScheme.onSurface
+    val colors = MaterialTheme.colorScheme
+    val onSurface = colors.onSurface
+    val muted = colors.onSurfaceVariant
+    val shape = RoundedCornerShape(14.dp)
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -605,44 +620,162 @@ private fun SetCard(set: ExerciseSet, number: Int, isNew: Boolean, modifier: Mod
                 alpha = appear.value
                 translationY = (1f - appear.value) * 16.dp.toPx()
             }
-            .background(lerp(SurfaceVariant, Color(0xFF3A0E16), glow.value), RoundedCornerShape(14.dp))
-            .border(1.dp, Red500.copy(alpha = 0.6f * glow.value), RoundedCornerShape(14.dp))
+            .clip(shape)
+            .background(lerp(colors.surfaceContainer, colors.primaryContainer, glow.value))
+            .border(1.dp, colors.primary.copy(alpha = 0.6f * glow.value), shape)
+            .clickable(onClickLabel = "Edit set", onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            modifier = Modifier.size(26.dp).background(SurfaceContainer, CircleShape),
+            modifier = Modifier.size(26.dp).background(colors.surfaceContainerHigh, CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Text(number.toString(), style = MaterialTheme.typography.labelMedium, color = OnSurfaceVariant)
+            Text(number.toString(), style = MaterialTheme.typography.labelMedium, color = muted)
         }
         Spacer(modifier = Modifier.width(12.dp))
         Text(
             buildAnnotatedString {
                 set.weight?.let {
                     withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = onSurface)) { append(it.cleanNum()) }
-                    withStyle(SpanStyle(color = OnSurfaceVariant, fontSize = 13.sp)) { append(" ${set.unit}") }
+                    withStyle(SpanStyle(color = muted, fontSize = 13.sp)) { append(" ${set.unit}") }
                 }
                 set.reps?.let {
-                    if (set.weight != null) withStyle(SpanStyle(color = OnSurfaceVariant)) { append("  ×  ") }
+                    if (set.weight != null) withStyle(SpanStyle(color = muted)) { append("  ×  ") }
                     withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = onSurface)) { append(it.toString()) }
-                    withStyle(SpanStyle(color = OnSurfaceVariant, fontSize = 13.sp)) { append(if (it == 1) " rep" else " reps") }
+                    withStyle(SpanStyle(color = muted, fontSize = 13.sp)) { append(if (it == 1) " rep" else " reps") }
                 }
             },
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.weight(1f)
         )
         set.rpe?.let {
-            Text(
-                "RPE ${it.cleanNum()}",
-                style = MaterialTheme.typography.labelMedium,
-                color = Red400,
-                modifier = Modifier
-                    .background(Red500.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 8.dp, vertical = 3.dp)
-            )
+            RpeChip(it)
             Spacer(modifier = Modifier.width(12.dp))
         }
-        Text(timeFormat.format(Date(set.timestamp)), style = MaterialTheme.typography.labelMedium, color = OnSurfaceVariant)
+        Text(timeFormat.format(Date(set.timestamp)), style = MaterialTheme.typography.labelMedium, color = muted)
     }
+}
+
+@Composable
+private fun RpeChip(rpe: Float) {
+    Text(
+        "RPE ${rpe.cleanNum()}",
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp)
+    )
+}
+
+/** The parsed set, waiting for a yes. Incomplete sets can't be saved as they are. */
+@Composable
+private fun ConfirmationCard(
+    parsed: ParsedSet,
+    onSave: () -> Unit,
+    onEdit: () -> Unit,
+    onDiscard: () -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(20.dp)
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+            .background(colors.surfaceContainer, shape)
+            .border(1.dp, colors.outlineVariant, shape)
+            .padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 18.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                sourceLabel(parsed.source),
+                style = MaterialTheme.typography.labelMedium,
+                color = colors.onSurfaceVariant,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = onDiscard) {
+                Icon(Icons.Default.Close, contentDescription = "Discard set", tint = colors.onSurfaceVariant)
+            }
+        }
+        Column(modifier = Modifier.padding(end = 12.dp)) {
+            if (parsed.rawInput.isNotBlank()) {
+                Text(
+                    "“${parsed.rawInput}”",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontStyle = FontStyle.Italic,
+                    color = colors.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+            }
+            Text(
+                if (parsed.hasKnownExercise) parsed.exerciseName else "Exercise?",
+                style = MaterialTheme.typography.titleLarge,
+                color = if (parsed.hasKnownExercise) colors.onSurface else colors.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+                parsed.weight?.let { BigValue(it.cleanNum(), parsed.unit, highlight = true) }
+                BigValue(parsed.reps?.toString() ?: "?", if (parsed.reps == 1) "rep" else "reps")
+                parsed.rpe?.let { BigValue(it.cleanNum(), "RPE") }
+            }
+            parsed.notes?.let {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(it, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
+            }
+            val missing = listOfNotNull(
+                "the exercise".takeIf { !parsed.hasKnownExercise },
+                "the reps".takeIf { parsed.reps == null || parsed.reps <= 0 }
+            )
+            if (missing.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    "Didn't catch ${missing.joinToString(" or ")}. Fill it in, or say the set again.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.error
+                )
+            } else if (parsed.confidence < 0.6f) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    "Not sure about this one. Check it before saving.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = RedlineTheme.status.warning
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (parsed.isComplete) {
+                    Button(
+                        onClick = onSave,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f).height(48.dp)
+                    ) {
+                        Icon(Icons.Default.Check, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Save set")
+                    }
+                    OutlinedButton(
+                        onClick = onEdit,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f).height(48.dp)
+                    ) {
+                        Icon(Icons.Default.Edit, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Edit")
+                    }
+                } else {
+                    Button(
+                        onClick = onEdit,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f).height(48.dp)
+                    ) {
+                        Icon(Icons.Default.Edit, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Fill in the set")
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun sourceLabel(source: ParseSource) = when (source) {
+    ParseSource.SEPARATED -> "Read with the “next” format"
+    ParseSource.REMOTE -> "Read by your parser endpoint"
+    ParseSource.LOCAL -> "Read on this phone"
+    ParseSource.MANUAL -> "Typed"
 }

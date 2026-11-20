@@ -35,12 +35,15 @@ class SettingsStore @Inject constructor(
     private val _userName = MutableStateFlow(prefs.getString(KEY_USER_NAME, "").orEmpty())
     val userName: StateFlow<String> = _userName.asStateFlow()
 
-    val isFirstLaunch: Boolean get() = !prefs.contains(KEY_USER_NAME)
+    /** True until the welcome dialog has been answered, even with a blank name. */
+    private val _needsName = MutableStateFlow(!prefs.contains(KEY_USER_NAME))
+    val needsName: StateFlow<Boolean> = _needsName.asStateFlow()
 
     fun setUserName(value: String) {
         val clean = value.trim()
         prefs.edit().putString(KEY_USER_NAME, clean).apply()
         _userName.value = clean
+        _needsName.value = false
     }
 
     private val _restDuration = MutableStateFlow(prefs.getInt(KEY_REST_DURATION, 90))

@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <application>
-        <!-- Debug builds only: lets adb stand in for the microphone. -->
+    <!-- Debug builds only. Cleartext lets a parser endpoint on the dev machine
+         (http://10.0.2.2:...) work; release builds still require https. -->
+    <application android:usesCleartextTraffic="true">
+        <!-- Lets adb stand in for the microphone. -->
         <receiver
             android:name=".demo.DemoSpeechReceiver"
             android:exported="true">

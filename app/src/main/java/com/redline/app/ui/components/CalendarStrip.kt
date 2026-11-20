@@ -18,8 +18,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.redline.app.ui.theme.OnSurfaceVariant
-import com.redline.app.ui.theme.Red500
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.format.TextStyle
@@ -59,7 +57,8 @@ private fun DayCell(
     modifier: Modifier = Modifier
 ) {
     val dayName = date.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault())
-    val dim = if (isFuture) 0.35f else 1f
+    val dim = if (isFuture) 0.45f else 1f
+    val colors = MaterialTheme.colorScheme
 
     Column(
         modifier = modifier,
@@ -69,13 +68,13 @@ private fun DayCell(
         Text(
             text = dayName,
             style = MaterialTheme.typography.labelMedium,
-            color = (if (isToday) Red500 else OnSurfaceVariant).copy(alpha = dim)
+            color = (if (isToday) colors.primary else colors.onSurfaceVariant).copy(alpha = dim)
         )
         Spacer(modifier = Modifier.height(6.dp))
         Box(
             modifier = Modifier
                 .size(36.dp)
-                .background(if (isToday) Red500 else Color.Transparent, CircleShape),
+                .background(if (isToday) colors.primary else Color.Transparent, CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Text(
@@ -83,9 +82,9 @@ private fun DayCell(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = if (isToday || hasWorkout) FontWeight.SemiBold else FontWeight.Normal,
                 color = when {
-                    isToday -> Color.White
-                    hasWorkout -> MaterialTheme.colorScheme.onSurface
-                    else -> OnSurfaceVariant.copy(alpha = dim)
+                    isToday -> colors.onPrimary
+                    hasWorkout -> colors.onSurface
+                    else -> colors.onSurfaceVariant.copy(alpha = dim)
                 }
             )
         }
@@ -93,7 +92,7 @@ private fun DayCell(
         Box(
             modifier = Modifier
                 .size(5.dp)
-                .background(if (hasWorkout) Red500 else Color.Transparent, CircleShape)
+                .background(if (hasWorkout) colors.primary else Color.Transparent, CircleShape)
         )
     }
 }

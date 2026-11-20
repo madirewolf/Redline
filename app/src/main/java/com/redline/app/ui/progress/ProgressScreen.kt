@@ -1,21 +1,14 @@
 package com.redline.app.ui.progress
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.withStyle
-import com.redline.app.ui.components.compact
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,11 +16,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Equalizer
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -35,57 +31,70 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.foundation.clickable
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import com.redline.app.ui.components.CardShape
+import com.redline.app.ui.components.EmptyState
+import com.redline.app.ui.components.PageHeader
+import com.redline.app.ui.components.ScreenPadding
+import com.redline.app.ui.components.compact
+import com.redline.app.ui.components.plural
 import com.redline.app.ui.navigation.Routes
-import com.redline.app.ui.theme.OnSurfaceVariant
-import com.redline.app.ui.theme.Outline
-import com.redline.app.ui.theme.Red500
-import com.redline.app.ui.theme.SurfaceVariant
+import com.redline.app.ui.theme.RedlineTheme
+import com.redline.app.ui.theme.Tabular
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ProgressScreen(navController: NavController, viewModel: ProgressViewModel = hiltViewModel()) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    if (uiState.isLoading) {
-        Box(modifier = Modifier.fillMaxSize())
-        return
-    }
-    if (uiState.summaries.isEmpty()) {
-        EmptyProgress()
-        return
-    }
-
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 20.dp),
+        contentPadding = PaddingValues(start = ScreenPadding, end = ScreenPadding, bottom = 112.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "Progress",
-                style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.onSurface
+            PageHeader(
+                title = "Progress",
+                subtitle = if (uiState.summaries.isEmpty()) null
+                else "${plural(uiState.summaries.size, "lift")}, best estimated 1RM per session"
             )
-            Text(
-                text = "${uiState.summaries.size} lifts · best estimated 1RM each session",
-                style = MaterialTheme.typography.bodyLarge,
-                color = OnSurfaceVariant,
-                modifier = Modifier.padding(top = 2.dp, bottom = 12.dp)
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        }
+
+        if (uiState.isLoading) return@LazyColumn
+
+        if (uiState.summaries.isEmpty()) {
+            item {
+                EmptyState(
+                    icon = Icons.AutoMirrored.Filled.ShowChart,
+                    title = "No lifts yet",
+                    body = "Log sets with a weight and reps, and each lift gets a trend line here.",
+                    modifier = Modifier.padding(top = 48.dp)
+                )
+            }
+            return@LazyColumn
+        }
+
+        item {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 ProgressStatus.entries.forEach { status ->
                     val count = uiState.summaries.count { it.status == status }
                     if (count > 0) StatusChip(status, count)
@@ -98,63 +107,23 @@ fun ProgressScreen(navController: NavController, viewModel: ProgressViewModel = 
                 navController.navigate(Routes.exerciseHistory(summary.exerciseKey))
             })
         }
-
-        item { Spacer(modifier = Modifier.height(112.dp)) }
     }
 }
 
 @Composable
-private fun EmptyProgress() {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            imageVector = Icons.Default.Equalizer,
-            contentDescription = null,
-            modifier = Modifier.size(64.dp),
-            tint = OnSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(24.dp))
-        Text(
-            text = "Progression Dashboard",
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "Track your lifts over time. Log a few workouts to see trends appear here.",
-            style = MaterialTheme.typography.bodyLarge,
-            color = OnSurfaceVariant,
-            textAlign = TextAlign.Center
-        )
-    }
-}
-
-@Composable
-private fun ProgressCard(summary: ExerciseProgress, onClick: () -> Unit = {}) {
+private fun ProgressCard(summary: ExerciseProgress, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(SurfaceVariant)
-            .clickable(onClick = onClick)
-            .padding(18.dp)
+            .clip(CardShape)
+            .background(colors.surfaceContainer)
+            .clickable(onClickLabel = "Open history", onClick = onClick)
+            .padding(16.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top
-        ) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = summary.exerciseName,
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                Text(summary.exerciseName, style = MaterialTheme.typography.titleMedium, color = colors.onSurface)
                 Spacer(modifier = Modifier.height(6.dp))
                 StatusChip(summary.status)
             }
@@ -162,61 +131,60 @@ private fun ProgressCard(summary: ExerciseProgress, onClick: () -> Unit = {}) {
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
                         text = it.roundToInt().toString(),
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        style = MaterialTheme.typography.headlineSmall.merge(Tabular),
+                        fontWeight = FontWeight.SemiBold,
+                        color = colors.onSurface
                     )
-                    Text(
-                        text = "est. 1RM",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = OnSurfaceVariant
-                    )
+                    Text("est. 1RM", style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant)
                 }
             }
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = colors.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp, top = 4.dp)
+            )
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
-        TrendLine(summary.trendPoints)
-        Spacer(modifier = Modifier.height(14.dp))
+        if (summary.trendPoints.size >= 2) {
+            Spacer(modifier = Modifier.height(12.dp))
+            TrendLine(summary.trendPoints, modifier = Modifier.height(56.dp))
+        }
+        Spacer(modifier = Modifier.height(12.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Metric("Volume", summary.totalVolume.toLong().compact())
             Metric("Sets", summary.setCount.toString())
-            Metric("Best 1RM", summary.bestEstimatedOneRepMax?.roundToInt()?.toString() ?: "-")
+            Metric("Best 1RM", summary.bestEstimatedOneRepMax?.roundToInt()?.toString() ?: "–")
         }
 
         Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            text = insight(summary),
-            style = MaterialTheme.typography.bodyMedium,
-            color = OnSurfaceVariant
-        )
+        Text(insight(summary), style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
     }
 }
 
+/** Best estimated 1RM per session, oldest to newest. Needs at least two points to draw. */
 @Composable
-private fun TrendLine(points: List<Float>) {
-    val lineColor = Red500
-    val mutedColor = Outline
+internal fun TrendLine(points: List<Float>, modifier: Modifier = Modifier) {
+    val lineColor = MaterialTheme.colorScheme.primary
+    val trackColor = MaterialTheme.colorScheme.outlineVariant
+    val description = if (points.size < 2) "Not enough sessions for a trend"
+    else "Trend from ${points.first().roundToInt()} to ${points.last().roundToInt()} over ${points.size} sessions"
     Canvas(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .height(64.dp)
+            .semantics { contentDescription = description }
     ) {
         drawLine(
-            color = mutedColor,
+            color = trackColor,
             start = Offset(0f, size.height - 1.dp.toPx()),
             end = Offset(size.width, size.height - 1.dp.toPx()),
             strokeWidth = 1.dp.toPx()
         )
-
         if (points.size < 2) return@Canvas
 
-        val min = points.minOrNull() ?: 0f
-        val max = points.maxOrNull() ?: min
+        val min = points.min()
+        val max = points.max()
         val range = (max - min).takeIf { it > 0f } ?: 1f
         val inset = 6.dp.toPx()
         val step = (size.width - inset * 2) / (points.size - 1)
@@ -235,16 +203,11 @@ private fun TrendLine(points: List<Float>) {
             lineTo(coords.first().x, size.height)
             close()
         }
-
-        drawPath(fill, Brush.verticalGradient(listOf(lineColor.copy(alpha = 0.28f), Color.Transparent)))
-        drawPath(
-            path = line,
-            color = lineColor,
-            style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
-        )
+        drawPath(fill, Brush.verticalGradient(listOf(lineColor.copy(alpha = 0.22f), Color.Transparent)))
+        drawPath(line, lineColor, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
         coords.dropLast(1).forEach { drawCircle(lineColor, radius = 2.5.dp.toPx(), center = it) }
-        drawCircle(lineColor.copy(alpha = 0.25f), radius = 9.dp.toPx(), center = coords.last())
-        drawCircle(lineColor, radius = 5.dp.toPx(), center = coords.last())
+        drawCircle(lineColor.copy(alpha = 0.25f), radius = 8.dp.toPx(), center = coords.last())
+        drawCircle(lineColor, radius = 4.5.dp.toPx(), center = coords.last())
     }
 }
 
@@ -270,28 +233,20 @@ private fun StatusChip(status: ProgressStatus, count: Int? = null) {
 @Composable
 private fun Metric(label: String, value: String) {
     Column {
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = OnSurfaceVariant
-        )
+        Text(value, style = MaterialTheme.typography.titleMedium.merge(Tabular), color = MaterialTheme.colorScheme.onSurface)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
-private fun statusColor(status: ProgressStatus): Color {
-    return when (status) {
-        ProgressStatus.Progressing -> Color(0xFF4CAF50)
-        ProgressStatus.Stagnating -> Red500
-        ProgressStatus.Regressing -> Color(0xFFFFB74D)
-        ProgressStatus.Building -> OnSurfaceVariant
-    }
+@Composable
+private fun statusColor(status: ProgressStatus): Color = when (status) {
+    ProgressStatus.Progressing -> RedlineTheme.status.success
+    ProgressStatus.Stagnating -> MaterialTheme.colorScheme.primary
+    ProgressStatus.Regressing -> RedlineTheme.status.warning
+    ProgressStatus.Building -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
+@Composable
 private fun insight(summary: ExerciseProgress) = buildAnnotatedString {
     if (summary.lastThreeSame) {
         append("Same load and reps for 3 sessions. Change the weight, reps, tempo or how close you go to failure.")

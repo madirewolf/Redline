@@ -1,162 +1,225 @@
 package com.redline.app.ui.settings
 
-import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.redline.app.ui.theme.OnSurfaceVariant
-import com.redline.app.ui.theme.Red500
-import com.redline.app.ui.theme.SurfaceVariant
+import com.redline.app.ui.components.RedlineTopBar
+import com.redline.app.ui.components.ScreenPadding
+import com.redline.app.ui.components.SectionCard
+import com.redline.app.ui.components.SectionLabel
+import com.redline.app.ui.components.formatClock
+import com.redline.app.ui.theme.RedlineTheme
+import com.redline.app.ui.theme.Tabular
+import com.redline.app.voice.RemoteVoiceParser
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel = hiltViewModel()) {
-    val userName by viewModel.userName.collectAsStateWithLifecycle()
+fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = hiltViewModel()) {
+    val savedName by viewModel.userName.collectAsStateWithLifecycle()
     val llmEndpoint by viewModel.llmEndpoint.collectAsStateWithLifecycle()
     val defaultUnit by viewModel.defaultUnit.collectAsStateWithLifecycle()
+    val restDuration by viewModel.restDuration.collectAsStateWithLifecycle()
+    val usdaApiKey by viewModel.usdaApiKey.collectAsStateWithLifecycle()
+    val endpointTest by viewModel.endpointTest.collectAsStateWithLifecycle()
+    val colors = MaterialTheme.colorScheme
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(20.dp)
-    ) {
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            text = "Settings",
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
-        Spacer(modifier = Modifier.height(20.dp))
+    // The store trims what it saves; the field keeps what's typed, so a space
+    // between first and last name doesn't vanish mid-word.
+    var name by rememberSaveable { mutableStateOf(savedName) }
 
-        // Name
+    Column(modifier = Modifier.fillMaxSize()) {
+        RedlineTopBar(title = "Settings", onBack = onBack)
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .background(SurfaceVariant, RoundedCornerShape(12.dp))
-                .padding(16.dp)
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
+                .padding(horizontal = ScreenPadding)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("Profile", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
-            Spacer(modifier = Modifier.height(10.dp))
-            OutlinedTextField(
-                value = userName,
-                onValueChange = viewModel::setUserName,
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                label = { Text("Name") },
-                placeholder = { Text("Your name") }
-            )
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(SurfaceVariant, RoundedCornerShape(12.dp))
-                .padding(16.dp)
-        ) {
-            Text(
-                text = "Voice parser",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "Use a secure HTTPS endpoint that calls Anthropic and returns structured set JSON.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = OnSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedTextField(
-                value = llmEndpoint,
-                onValueChange = viewModel::setLlmEndpoint,
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                label = { Text("Parser endpoint") },
-                placeholder = { Text("https://your-api.com/redline/parse-set") }
-            )
-        }
-
-        Spacer(modifier = Modifier.height(14.dp))
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(SurfaceVariant, RoundedCornerShape(12.dp))
-                .padding(16.dp)
-        ) {
-            Text(
-                text = "Units",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Row {
-                UnitButton(
-                    label = "lbs",
-                    selected = defaultUnit == "lbs",
-                    onClick = { viewModel.setDefaultUnit("lbs") },
-                    modifier = Modifier.weight(1f)
+            SectionLabel("Profile", Modifier.padding(top = 4.dp))
+            SectionCard {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it; viewModel.setUserName(it) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Name") },
+                    supportingText = { Text("Used in the greeting on Home.") },
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words)
                 )
-                Spacer(modifier = Modifier.width(12.dp))
-                UnitButton(
-                    label = "kg",
-                    selected = defaultUnit == "kg",
-                    onClick = { viewModel.setDefaultUnit("kg") },
-                    modifier = Modifier.weight(1f)
+            }
+
+            SectionLabel("Training", Modifier.padding(top = 8.dp))
+            SectionCard(contentPadding = 0.dp) {
+                SettingRow(title = "Weight unit", body = "What a set without a unit is logged in.") {
+                    SingleChoiceSegmentedButtonRow {
+                        listOf("lbs", "kg").forEachIndexed { index, unit ->
+                            SegmentedButton(
+                                selected = defaultUnit == unit,
+                                onClick = { viewModel.setDefaultUnit(unit) },
+                                shape = SegmentedButtonDefaults.itemShape(index, 2),
+                                icon = {}
+                            ) { Text(unit) }
+                        }
+                    }
+                }
+                HorizontalDivider(color = colors.outlineVariant, modifier = Modifier.padding(horizontal = 16.dp))
+                SettingRow(title = "Rest timer", body = "Starts after every saved set.") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        FilledTonalIconButton(
+                            onClick = { viewModel.changeRestDuration(-REST_STEP) },
+                            enabled = restDuration > MIN_REST
+                        ) { Icon(Icons.Default.Remove, contentDescription = "Shorter rest") }
+                        Text(
+                            formatClock(restDuration.toLong()),
+                            style = MaterialTheme.typography.titleMedium.merge(Tabular),
+                            color = colors.onSurface,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .widthIn(min = 56.dp)
+                                .semantics { contentDescription = "Rest ${restDuration / 60} minutes ${restDuration % 60} seconds" }
+                        )
+                        FilledTonalIconButton(
+                            onClick = { viewModel.changeRestDuration(REST_STEP) },
+                            enabled = restDuration < MAX_REST
+                        ) { Icon(Icons.Default.Add, contentDescription = "Longer rest") }
+                    }
+                }
+            }
+
+            SectionLabel("Voice parser", Modifier.padding(top = 8.dp))
+            SectionCard {
+                Text(
+                    "Optional. Sets are read on the phone without one. With an endpoint, anything " +
+                        "not in the “next” format goes to it first, and the phone takes over if it doesn't answer.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                val invalid = llmEndpoint.isNotBlank() && !RemoteVoiceParser.isValidEndpoint(llmEndpoint)
+                OutlinedTextField(
+                    value = llmEndpoint,
+                    onValueChange = viewModel::setLlmEndpoint,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Endpoint URL") },
+                    placeholder = { Text("https://example.com/parse-set") },
+                    isError = invalid,
+                    supportingText = if (invalid) {
+                        { Text("Enter a full URL, like https://example.com/parse-set") }
+                    } else null,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(
+                        onClick = viewModel::testEndpoint,
+                        enabled = !invalid && llmEndpoint.isNotBlank() && endpointTest != EndpointTest.Running
+                    ) { Text("Test endpoint") }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    if (endpointTest == EndpointTest.Running) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    }
+                }
+                val result = endpointTest
+                if (result is EndpointTest.Passed || result is EndpointTest.Failed) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = when (result) {
+                            is EndpointTest.Passed -> "Working. “${RemoteVoiceParser.PROBE_TRANSCRIPT}” came back as ${result.heard}."
+                            is EndpointTest.Failed -> "Not working: ${result.reason}."
+                            else -> ""
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (result is EndpointTest.Passed) RedlineTheme.status.success else colors.error,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+                    )
+                }
+            }
+
+            SectionLabel("Food lookup", Modifier.padding(top = 8.dp))
+            SectionCard {
+                Text(
+                    "Calories come from the USDA FoodData Central database, which needs a free API key.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = usdaApiKey,
+                    onValueChange = viewModel::setUsdaApiKey,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("USDA API key") },
+                    supportingText = { Text("Get one at fdc.nal.usda.gov/api-key-signup") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Done)
                 )
             }
         }
-
-        Spacer(modifier = Modifier.height(14.dp))
-        Text(
-            text = "Local regex parsing works without a server. The endpoint upgrades parsing when configured.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = OnSurfaceVariant,
-        )
     }
 }
 
 @Composable
-private fun UnitButton(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    if (selected) {
-        Button(
-            onClick = onClick,
-            modifier = modifier,
-            colors = ButtonDefaults.buttonColors(containerColor = Red500),
-            shape = RoundedCornerShape(10.dp)
-        ) {
-            Text(label)
+private fun SettingRow(title: String, body: String, control: @Composable () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+            Text(body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-    } else {
-        OutlinedButton(
-            onClick = onClick,
-            modifier = modifier,
-            shape = RoundedCornerShape(10.dp)
-        ) {
-            Text(label)
-        }
+        control()
     }
 }
+
+private const val REST_STEP = 15
+private const val MIN_REST = 30
+private const val MAX_REST = 600

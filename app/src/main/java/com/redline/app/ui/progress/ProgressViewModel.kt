@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.redline.app.data.local.entity.ExerciseSet
 import com.redline.app.data.repository.WorkoutRepository
+import com.redline.app.voice.ExerciseCatalog
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -50,7 +51,7 @@ class ProgressViewModel @Inject constructor(
 
     private fun buildSummaries(sets: List<ExerciseSet>): List<ExerciseProgress> {
         return sets
-            .groupBy { it.canonicalExerciseKey ?: it.exerciseName.lowercase().trim() }
+            .groupBy { ExerciseCatalog.groupingKey(it.canonicalExerciseKey, it.exerciseName) }
             .map { (key, exerciseSets) -> buildSummary(key, exerciseSets) }
             .sortedWith(
                 compareByDescending<ExerciseProgress> { it.status == ProgressStatus.Stagnating }
@@ -105,16 +106,17 @@ class ProgressViewModel @Inject constructor(
         )
     }
 
-    private fun ExerciseSet.estimatedOneRepMax(): Float? {
-        val w = weight ?: return null
-        val r = reps ?: return null
-        if (w <= 0f || r <= 0) return null
-        return w * (1f + (r / 30f))
-    }
-
     private fun ExerciseSet.loadSignature(): String {
         val weightPart = weight?.roundToInt()?.toString() ?: "bodyweight"
         val repsPart = reps?.toString() ?: "unknown"
         return "$weightPart:$repsPart"
     }
+}
+
+/** Epley estimate: weight × (1 + reps / 30). Null without both a weight and reps. */
+internal fun ExerciseSet.estimatedOneRepMax(): Float? {
+    val w = weight ?: return null
+    val r = reps ?: return null
+    if (w <= 0f || r <= 0) return null
+    return w * (1f + (r / 30f))
 }

@@ -28,11 +28,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.icons.outlined.People
+import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -44,6 +44,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -57,14 +58,9 @@ import com.redline.app.ui.music.MusicScreen
 import com.redline.app.ui.progress.ProgressScreen
 import com.redline.app.ui.settings.SettingsScreen
 import com.redline.app.ui.tempo.TempoScreen
-import com.redline.app.ui.theme.OnSurfaceVariant
-import com.redline.app.ui.theme.Outline
-import com.redline.app.ui.theme.Red500
-import com.redline.app.ui.theme.Surface
-import com.redline.app.ui.theme.SurfaceVariant
 import com.redline.app.ui.calories.CaloriesScreen
 import com.redline.app.ui.motivation.MotivationScreen
-import com.redline.app.ui.social.SocialScreen
+import com.redline.app.ui.progress.ExerciseHistoryScreen
 import com.redline.app.ui.workout.WorkoutDetailScreen
 
 object Routes {
@@ -76,12 +72,12 @@ object Routes {
     const val TEMPO = "tempo"
     const val WORKOUT_DETAIL = "workout/{sessionId}"
     const val EXERCISE_HISTORY = "exercise/{exerciseKey}"
-    const val SOCIAL = "social"
     const val CALORIES = "calories"
     const val MOTIVATION = "motivation"
 
     fun workoutDetail(sessionId: Long) = "workout/$sessionId"
-    fun exerciseHistory(key: String) = "exercise/${java.net.URLEncoder.encode(key, "UTF-8")}"
+    // Uri.encode, not URLEncoder: Navigation decodes with Uri.decode, which leaves "+" as a plus.
+    fun exerciseHistory(key: String) = "exercise/${android.net.Uri.encode(key)}"
 }
 
 private data class PillItem(
@@ -97,13 +93,16 @@ fun RedlineNavHost() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    val pillScreens = setOf(Routes.HOME, Routes.INSIGHTS, Routes.MUSIC, Routes.SETTINGS, Routes.TEMPO, Routes.SOCIAL, Routes.CALORIES, Routes.MOTIVATION)
+    // Top-level screens get the pill; everything you drill into gets a back arrow instead.
+    val pillScreens = setOf(Routes.HOME, Routes.TEMPO, Routes.INSIGHTS)
     val showPill = currentRoute in pillScreens
+    val back: () -> Unit = { navController.popBackStack() }
+    val page = MaterialTheme.colorScheme.background
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Surface)
+            .background(page)
     ) {
         NavHost(
             navController = navController,
@@ -117,27 +116,22 @@ fun RedlineNavHost() {
             composable(Routes.HOME) { HomeScreen(navController) }
             composable(Routes.TRAIN) { LogScreen(navController) }
             composable(Routes.INSIGHTS) { ProgressScreen(navController) }
-            composable(Routes.SETTINGS) { SettingsScreen() }
-            composable(Routes.MUSIC) { MusicScreen() }
+            composable(Routes.SETTINGS) { SettingsScreen(onBack = back) }
+            composable(Routes.MUSIC) { MusicScreen(onBack = back) }
             composable(Routes.TEMPO) { TempoScreen() }
-            composable(Routes.SOCIAL) { SocialScreen() }
-            composable(Routes.CALORIES) { CaloriesScreen() }
-            composable(Routes.MOTIVATION) { MotivationScreen() }
+            composable(Routes.CALORIES) { CaloriesScreen(onBack = back, onOpenSettings = { navController.navigate(Routes.SETTINGS) }) }
+            composable(Routes.MOTIVATION) { MotivationScreen(onBack = back) }
             composable(
                 Routes.WORKOUT_DETAIL,
                 arguments = listOf(navArgument("sessionId") { type = NavType.LongType })
-            ) { entry ->
-                val id = entry.arguments?.getLong("sessionId") ?: return@composable
-                WorkoutDetailScreen(sessionId = id, navController = navController)
+            ) {
+                WorkoutDetailScreen(onBack = back)
             }
             composable(
                 Routes.EXERCISE_HISTORY,
                 arguments = listOf(navArgument("exerciseKey") { type = NavType.StringType })
-            ) { entry ->
-                val key = java.net.URLDecoder.decode(
-                    entry.arguments?.getString("exerciseKey") ?: return@composable, "UTF-8"
-                )
-                com.redline.app.ui.progress.ExerciseHistoryScreen(exerciseKey = key)
+            ) {
+                ExerciseHistoryScreen(onBack = back)
             }
         }
 
@@ -155,9 +149,9 @@ fun RedlineNavHost() {
                         // Opaque from the pill's middle down, so nothing shows
                         // beside its rounded ends.
                         Brush.verticalGradient(
-                            0f to Surface.copy(alpha = 0f),
-                            0.4f to Surface.copy(alpha = 0.88f),
-                            0.62f to Surface
+                            0f to page.copy(alpha = 0f),
+                            0.4f to page.copy(alpha = 0.88f),
+                            0.62f to page
                         )
                     )
             )
@@ -191,17 +185,18 @@ private fun FloatingNavPill(
     val items = listOf(
         PillItem(Routes.HOME, "Home", Icons.Outlined.Home, Icons.Filled.Home),
         PillItem(Routes.TRAIN, "Train", Icons.Outlined.Mic, Icons.Filled.Mic),
-        PillItem(Routes.SOCIAL, "Social", Icons.Outlined.People, Icons.Filled.People),
+        PillItem(Routes.TEMPO, "Tempo", Icons.Outlined.Speed, Icons.Filled.Speed),
         PillItem(Routes.INSIGHTS, "Progress", Icons.Outlined.Insights, Icons.Filled.Insights)
     )
 
+    val colors = MaterialTheme.colorScheme
     Row(
         modifier = Modifier
             .navigationBarsPadding()
             .padding(bottom = 12.dp)
             .clip(RoundedCornerShape(32.dp))
-            .background(SurfaceVariant.copy(alpha = 0.92f))
-            .border(1.dp, Outline, RoundedCornerShape(32.dp))
+            .background(colors.surfaceContainerHigh)
+            .border(1.dp, colors.outlineVariant, RoundedCornerShape(32.dp))
             .padding(horizontal = 6.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -211,8 +206,8 @@ private fun FloatingNavPill(
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(24.dp))
-                    .background(if (selected) Red500.copy(alpha = 0.12f) else Color.Transparent)
-                    .clickable { onNavigate(item.route) }
+                    .background(if (selected) colors.primaryContainer else Color.Transparent)
+                    .clickable(role = Role.Tab, onClickLabel = item.label) { onNavigate(item.route) }
                     .animateContentSize(tween(220))
                     .padding(horizontal = 20.dp, vertical = 10.dp),
                 contentAlignment = Alignment.Center
@@ -223,15 +218,16 @@ private fun FloatingNavPill(
                 ) {
                     Icon(
                         imageVector = if (selected) item.selectedIcon else item.icon,
-                        contentDescription = item.label,
+                        // The label says it when selected; don't read it twice.
+                        contentDescription = if (selected) null else item.label,
                         modifier = Modifier.size(22.dp),
-                        tint = if (selected) Red500 else OnSurfaceVariant
+                        tint = if (selected) colors.onPrimaryContainer else colors.onSurfaceVariant
                     )
                     if (selected) {
                         Text(
                             text = item.label,
                             style = MaterialTheme.typography.labelLarge,
-                            color = Red500
+                            color = colors.onPrimaryContainer
                         )
                     }
                 }

@@ -46,7 +46,8 @@ class HomeViewModel @Inject constructor(
 ) : ViewModel() {
 
     val userName: StateFlow<String> = settingsStore.userName
-    val isFirstLaunch: Boolean = settingsStore.isFirstLaunch
+    /** Live, so the welcome dialog goes away once it's answered and never comes back. */
+    val needsName: StateFlow<Boolean> = settingsStore.needsName
 
     val sessionState: StateFlow<SessionState> = repository.getActiveSessionState()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SessionState.Loading)

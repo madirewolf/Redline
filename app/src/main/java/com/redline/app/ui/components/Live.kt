@@ -16,7 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
-import com.redline.app.ui.theme.Red500
+import androidx.compose.material3.MaterialTheme
 import kotlinx.coroutines.delay
 
 /** Wall-clock time that ticks on each whole second, for live timers. */
@@ -33,7 +33,7 @@ fun rememberNow(): Long {
 
 /** A small breathing dot that marks something as happening right now. */
 @Composable
-fun LiveDot(color: Color = Red500, modifier: Modifier = Modifier) {
+fun LiveDot(color: Color = MaterialTheme.colorScheme.primary, modifier: Modifier = Modifier) {
     val pulse = rememberInfiniteTransition(label = "live")
     val alpha by pulse.animateFloat(
         initialValue = 1f,

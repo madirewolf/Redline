@@ -1,49 +1,33 @@
 package com.redline.app.ui.theme
 
-import android.app.Activity
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalView
-import androidx.core.view.WindowCompat
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.staticCompositionLocalOf
 
-private val RedlineDarkScheme = darkColorScheme(
-    primary = Red500,
-    onPrimary = Color.White,
-    primaryContainer = Red600,
-    onPrimaryContainer = Red200,
-    secondary = Red400,
-    onSecondary = Color.White,
-    background = Surface,
-    onBackground = OnSurface,
-    surface = Surface,
-    onSurface = OnSurface,
-    surfaceVariant = SurfaceVariant,
-    onSurfaceVariant = OnSurfaceVariant,
-    surfaceContainerHigh = SurfaceContainer,
-    outline = Outline,
-    error = Color(0xFFCF6679),
-    onError = Color.Black
-)
+private val LocalStatusColors = staticCompositionLocalOf { DarkStatusColors }
 
+/** Follows the system light/dark setting. System bar icons are handled by enableEdgeToEdge. */
 @Composable
-fun RedlineTheme(content: @Composable () -> Unit) {
-    val view = LocalView.current
-    if (!view.isInEditMode) {
-        SideEffect {
-            val window = (view.context as Activity).window
-            window.statusBarColor = Surface.toArgb()
-            window.navigationBarColor = Surface.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
-        }
+fun RedlineTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    content: @Composable () -> Unit
+) {
+    CompositionLocalProvider(
+        LocalStatusColors provides if (darkTheme) DarkStatusColors else LightStatusColors
+    ) {
+        MaterialTheme(
+            colorScheme = if (darkTheme) RedlineDarkColors else RedlineLightColors,
+            typography = RedlineTypography,
+            content = content
+        )
     }
+}
 
-    MaterialTheme(
-        colorScheme = RedlineDarkScheme,
-        typography = RedlineTypography,
-        content = content
-    )
+object RedlineTheme {
+    val status: RedlineStatusColors
+        @Composable @ReadOnlyComposable
+        get() = LocalStatusColors.current
 }

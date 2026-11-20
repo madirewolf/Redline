@@ -6,6 +6,9 @@ import androidx.lifecycle.viewModelScope
 import com.redline.app.data.local.entity.ExerciseSet
 import com.redline.app.data.local.entity.WorkoutSession
 import com.redline.app.data.repository.WorkoutRepository
+import com.redline.app.ui.components.withDraft
+import com.redline.app.voice.ExerciseCatalog
+import com.redline.app.voice.SetDraft
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -32,24 +35,21 @@ class WorkoutDetailViewModel @Inject constructor(
     private val _session = MutableStateFlow<WorkoutSession?>(null)
     val session: StateFlow<WorkoutSession?> = _session.asStateFlow()
 
-    private val _isEditing = MutableStateFlow(false)
-    val isEditing: StateFlow<Boolean> = _isEditing.asStateFlow()
+    /** The set open in the editor, if any. */
+    private val _editing = MutableStateFlow<ExerciseSet?>(null)
+    val editing: StateFlow<ExerciseSet?> = _editing.asStateFlow()
 
+    // Same grouping as the live log, so "Pull-ups" and "pull ups" stay one exercise.
     val exerciseGroups: StateFlow<List<ExerciseGroup>> = repository.getSetsForSession(sessionId)
         .map { sets ->
-            sets.groupBy { it.canonicalExerciseKey ?: it.exerciseName }
+            sets.groupBy { ExerciseCatalog.groupingKey(it.canonicalExerciseKey, it.exerciseName) }
                 .map { (_, groupSets) ->
-                    ExerciseGroup(
-                        exerciseName = groupSets.first().exerciseName,
-                        sets = groupSets.sortedBy { it.timestamp }
-                    )
+                    val ordered = groupSets.sortedBy { it.timestamp }
+                    ExerciseGroup(exerciseName = ordered.first().exerciseName, sets = ordered)
                 }
+                .sortedBy { it.sets.first().timestamp }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val setCount: StateFlow<Int> = repository.getSetsForSession(sessionId)
-        .map { it.size }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     init {
         viewModelScope.launch {
@@ -57,15 +57,23 @@ class WorkoutDetailViewModel @Inject constructor(
         }
     }
 
-    fun toggleEditing() {
-        _isEditing.value = !_isEditing.value
+    fun openEditor(set: ExerciseSet) {
+        _editing.value = set
     }
 
-    fun updateSet(set: ExerciseSet) {
-        viewModelScope.launch { repository.updateSet(set) }
+    fun closeEditor() {
+        _editing.value = null
     }
 
-    fun deleteSet(set: ExerciseSet) {
+    fun save(draft: SetDraft) {
+        val updated = _editing.value?.withDraft(draft) ?: return
+        viewModelScope.launch { repository.updateSet(updated) }
+        closeEditor()
+    }
+
+    fun deleteEditing() {
+        val set = _editing.value ?: return
         viewModelScope.launch { repository.deleteSet(set) }
+        closeEditor()
     }
 }

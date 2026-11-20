@@ -5,7 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.redline.app.data.local.entity.CalorieEntry
 import com.redline.app.data.repository.WorkoutRepository
 import com.redline.app.nutrition.FoodResult
+import com.redline.app.nutrition.FoodSearch
 import com.redline.app.nutrition.NutritionApi
+import com.redline.app.settings.SettingsStore
 import com.redline.app.voice.SpeechRecognizerManager
 import com.redline.app.voice.SpeechState
 import com.redline.app.voice.forOwner
@@ -25,15 +27,22 @@ data class CalorieUiState(
     val searchResults: List<FoodResult> = emptyList(),
     val isSearching: Boolean = false,
     val searchError: String? = null,
-    val lastQuery: String? = null
+    val lastQuery: String? = null,
+    /** True when the lookup can't run at all until a key is added in Settings. */
+    val needsKey: Boolean = false
 )
 
 @HiltViewModel
 class CaloriesViewModel @Inject constructor(
     private val repository: WorkoutRepository,
     private val nutritionApi: NutritionApi,
+    private val settingsStore: SettingsStore,
     val speechManager: SpeechRecognizerManager
 ) : ViewModel() {
+
+    val hasKey: StateFlow<Boolean> = settingsStore.usdaApiKey
+        .map { it.isNotBlank() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, settingsStore.usdaApiKey.value.isNotBlank())
 
     private val _uiState = MutableStateFlow(CalorieUiState())
     val uiState: StateFlow<CalorieUiState> = _uiState.asStateFlow()
@@ -70,13 +79,15 @@ class CaloriesViewModel @Inject constructor(
     fun stopListening() = speechManager.stopListening()
 
     fun searchFood(query: String) {
+        val clean = query.trim()
+        if (clean.isEmpty()) return
         viewModelScope.launch {
-            _uiState.value = CalorieUiState(isSearching = true, lastQuery = query)
-            val results = nutritionApi.searchFood(query)
-            _uiState.value = if (results.isEmpty()) {
-                CalorieUiState(searchError = "No results for \"$query\". Try a simpler term.", lastQuery = query)
-            } else {
-                CalorieUiState(searchResults = results, lastQuery = query)
+            _uiState.value = CalorieUiState(isSearching = true, lastQuery = clean)
+            _uiState.value = when (val result = nutritionApi.searchFood(clean)) {
+                is FoodSearch.Found -> CalorieUiState(searchResults = result.results, lastQuery = clean)
+                FoodSearch.NoKey -> CalorieUiState(needsKey = true, lastQuery = clean)
+                FoodSearch.NoMatch -> CalorieUiState(searchError = "Nothing found for “$clean”. Try a simpler name, like “banana”.", lastQuery = clean)
+                is FoodSearch.Failed -> CalorieUiState(searchError = "${result.reason}.", lastQuery = clean)
             }
         }
     }

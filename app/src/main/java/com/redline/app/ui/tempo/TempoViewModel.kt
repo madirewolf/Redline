@@ -1,224 +1,82 @@
 package com.redline.app.ui.tempo
 
-import android.content.Context
-import android.content.Intent
-import android.os.Bundle
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.redline.app.data.local.entity.ExerciseSet
+import com.redline.app.data.repository.WorkoutRepository
+import com.redline.app.tempo.TempoAnalysis
+import com.redline.app.tempo.TempoRecorder
+import com.redline.app.tempo.TempoState
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-data class PhaseTimestamp(
-    val phase: String, // "eccentric" or "concentric"
-    val timeMs: Long
-)
-
-data class RepTiming(
-    val repNumber: Int,
-    val eccentricMs: Long,
-    val concentricMs: Long
-) {
-    val totalMs: Long get() = eccentricMs + concentricMs
-}
-
-data class TempoResult(
-    val reps: List<RepTiming>,
-    val averageRepMs: Long,
-    val degradationPercent: Float,
-    val failureProximityScore: Int,
-    val note: String
-)
-
-sealed interface VoiceTempoState {
-    data object Idle : VoiceTempoState
-    data class Tracking(
-        val currentPhase: String,
-        val repCount: Int,
-        val phases: List<PhaseTimestamp>
-    ) : VoiceTempoState
-    data class Done(val result: TempoResult) : VoiceTempoState
-    data class Error(val message: String) : VoiceTempoState
-}
-
+/**
+ * Drives the Tempo screen: the accelerometer recorder for the set itself, and
+ * the most recent logged set so a result can be saved where it belongs.
+ */
 @HiltViewModel
 class TempoViewModel @Inject constructor(
-    @ApplicationContext private val context: Context
+    private val recorder: TempoRecorder,
+    private val repository: WorkoutRepository
 ) : ViewModel() {
+    val state: StateFlow<TempoState> = recorder.state
 
-    private val _state = MutableStateFlow<VoiceTempoState>(VoiceTempoState.Idle)
-    val state: StateFlow<VoiceTempoState> = _state.asStateFlow()
+    /** The set a result would be saved to: the last one logged, if it was logged recently. */
+    val lastSet: StateFlow<ExerciseSet?> = repository.getAllSets()
+        .map { sets -> sets.firstOrNull()?.takeIf { System.currentTimeMillis() - it.timestamp < ATTACH_WINDOW_MS } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    private val phases = mutableListOf<PhaseTimestamp>()
-    private var recognizer: SpeechRecognizer? = null
-    private var isListening = false
+    /** Id of the set the current result was saved to, so the button can say so. */
+    private val _savedTo = MutableStateFlow<Long?>(null)
+    val savedTo: StateFlow<Long?> = _savedTo.asStateFlow()
 
     fun start() {
-        phases.clear()
-        _state.value = VoiceTempoState.Tracking("waiting", 0, emptyList())
-        startContinuousListening()
+        _savedTo.value = null
+        recorder.start()
     }
 
     fun stop() {
-        recognizer?.destroy()
-        recognizer = null
-        isListening = false
-        analyze()
+        recorder.stopAndAnalyze()
     }
 
     fun reset() {
-        recognizer?.destroy()
-        recognizer = null
-        isListening = false
-        phases.clear()
-        _state.value = VoiceTempoState.Idle
+        _savedTo.value = null
+        recorder.clear()
     }
 
-    private fun startContinuousListening() {
-        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-            _state.value = VoiceTempoState.Error("Speech recognition not available")
-            return
+    /** Writes the scored result onto the last logged set. */
+    fun saveToLastSet() {
+        val analysis = (state.value as? TempoState.Ready)?.analysis ?: return
+        val set = lastSet.value ?: return
+        if (!analysis.isScored) return
+        viewModelScope.launch {
+            repository.updateSet(
+                set.copy(
+                    tempoAverageRepSeconds = analysis.averageRepSeconds,
+                    tempoDegradationPercent = analysis.degradationPercent,
+                    failureProximityScore = analysis.failureProximityScore
+                )
+            )
+            _savedTo.value = set.id
         }
-
-        recognizer?.destroy()
-        recognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
-            setRecognitionListener(object : RecognitionListener {
-                override fun onResults(results: Bundle?) {
-                    val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        ?.firstOrNull()?.lowercase() ?: ""
-                    handlePhaseCommand(text)
-                    // Restart listening for next command
-                    if (isListening) startListeningIntent()
-                }
-                override fun onPartialResults(partial: Bundle?) {
-                    val text = partial?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        ?.firstOrNull()?.lowercase() ?: ""
-                    if (text.isNotBlank()) handlePhaseCommand(text)
-                }
-                override fun onError(error: Int) {
-                    if (isListening && error != SpeechRecognizer.ERROR_CLIENT) {
-                        startListeningIntent()
-                    }
-                }
-                override fun onReadyForSpeech(p: Bundle?) {}
-                override fun onBeginningOfSpeech() {}
-                override fun onRmsChanged(rmsdB: Float) {}
-                override fun onBufferReceived(buffer: ByteArray?) {}
-                override fun onEndOfSpeech() {}
-                override fun onEvent(eventType: Int, params: Bundle?) {}
-            })
-        }
-        isListening = true
-        startListeningIntent()
-    }
-
-    private fun startListeningIntent() {
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-        }
-        try {
-            recognizer?.startListening(intent)
-        } catch (_: Exception) { }
-    }
-
-    private fun handlePhaseCommand(text: String) {
-        val clean = text.trim().lowercase()
-        when {
-            clean.contains("done") || clean.contains("stop") || clean.contains("finish") -> {
-                stop()
-                return
-            }
-            clean.contains("eccentric") || clean.contains("down") || clean.contains("lower") -> {
-                recordPhase("eccentric")
-            }
-            clean.contains("concentric") || clean.contains("up") || clean.contains("push") || clean.contains("pull") -> {
-                recordPhase("concentric")
-            }
-        }
-    }
-
-    private fun recordPhase(phase: String) {
-        val now = System.currentTimeMillis()
-        // Prevent duplicate phases within 300ms
-        val last = phases.lastOrNull()
-        if (last != null && last.phase == phase && now - last.timeMs < 300) return
-
-        phases.add(PhaseTimestamp(phase, now))
-
-        val repCount = phases.count { it.phase == "concentric" }
-        _state.value = VoiceTempoState.Tracking(
-            currentPhase = phase,
-            repCount = repCount,
-            phases = phases.toList()
-        )
-    }
-
-    private fun analyze() {
-        if (phases.size < 3) {
-            _state.value = VoiceTempoState.Error("Need at least 2 full phases to analyze. Say 'eccentric' then 'concentric' for each rep.")
-            return
-        }
-
-        val reps = mutableListOf<RepTiming>()
-        var i = 0
-        var repNum = 1
-        while (i < phases.size - 1) {
-            val current = phases[i]
-            val next = phases[i + 1]
-            if (current.phase == "eccentric" && next.phase == "concentric") {
-                val eccentricMs = next.timeMs - current.timeMs
-                val concentricMs = if (i + 2 < phases.size) {
-                    phases[i + 2].timeMs - next.timeMs
-                } else {
-                    eccentricMs // estimate
-                }
-                reps.add(RepTiming(repNum, eccentricMs, concentricMs))
-                repNum++
-                i += 2
-            } else {
-                i++
-            }
-        }
-
-        if (reps.isEmpty()) {
-            _state.value = VoiceTempoState.Error("Could not detect full rep cycles. Alternate 'eccentric' and 'concentric'.")
-            return
-        }
-
-        val avgMs = reps.map { it.totalMs }.average().toLong()
-        val firstThird = reps.take(maxOf(1, reps.size / 3)).map { it.totalMs }.average()
-        val lastThird = reps.takeLast(maxOf(1, reps.size / 3)).map { it.totalMs }.average()
-        val degradation = if (firstThird > 0) ((lastThird - firstThird) / firstThird * 100).toFloat() else 0f
-
-        val score = when {
-            degradation >= 35f -> minOf(100, 92 + reps.size)
-            degradation >= 22f -> minOf(100, 82 + reps.size)
-            degradation >= 12f -> minOf(95, 68 + reps.size * 2)
-            degradation >= 5f -> minOf(85, 54 + reps.size * 2)
-            else -> minOf(50, 34 + reps.size * 2)
-        }
-
-        val note = when {
-            score >= 85 -> "Tempo degraded significantly — you were close to failure."
-            score >= 70 -> "Progressive tempo slowdown detected — good effort."
-            score >= 55 -> "Some fatigue visible, but room to push harder."
-            else -> "Tempo stayed mostly constant — you likely had reps in reserve."
-        }
-
-        _state.value = VoiceTempoState.Done(
-            TempoResult(reps, avgMs, degradation, score, note)
-        )
     }
 
     override fun onCleared() {
-        recognizer?.destroy()
-        isListening = false
+        // The recorder is a singleton; don't leave the sensor running once nobody is watching.
+        if (recorder.state.value is TempoState.Recording) recorder.clear()
+    }
+
+    companion object {
+        private const val ATTACH_WINDOW_MS = 3 * 60 * 60 * 1000L
     }
 }
+
+/** True when the analyser produced a score rather than a reason it couldn't. */
+val TempoAnalysis.isScored: Boolean get() = failureProximityScore != null

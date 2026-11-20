@@ -1,7 +1,9 @@
 package com.redline.app.ui.music
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,150 +14,145 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.redline.app.data.local.entity.PrTrack
-import com.redline.app.ui.theme.OnSurfaceVariant
-import com.redline.app.ui.theme.Red500
-import com.redline.app.ui.theme.SurfaceVariant
+import com.redline.app.ui.components.EmptyState
+import com.redline.app.ui.components.RedlineTopBar
+import com.redline.app.ui.components.ScreenPadding
+import com.redline.app.ui.components.SectionCard
+import com.redline.app.ui.components.SectionLabel
 
 @Composable
-fun MusicScreen(viewModel: MusicViewModel = hiltViewModel()) {
+fun MusicScreen(onBack: () -> Unit, viewModel: MusicViewModel = hiltViewModel()) {
     val tracks by viewModel.tracks.collectAsStateWithLifecycle()
-    var label by remember { mutableStateOf("") }
-    var uri by remember { mutableStateOf("") }
-    var dropSeconds by remember { mutableStateOf("") }
+    val playError by viewModel.playError.collectAsStateWithLifecycle()
+    var label by rememberSaveable { mutableStateOf("") }
+    var uri by rememberSaveable { mutableStateOf("") }
+    var dropSeconds by rememberSaveable { mutableStateOf("") }
+    var linkError by rememberSaveable { mutableStateOf(false) }
+    val colors = MaterialTheme.colorScheme
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 20.dp)
-    ) {
-        item {
-            Spacer(modifier = Modifier.height(16.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Music",
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "PR tracks for heavy attempts",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = OnSurfaceVariant
-                    )
-                }
-                Button(
-                    onClick = viewModel::playDefault,
-                    enabled = tracks.isNotEmpty(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Red500),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Text("Play PR")
-                }
-            }
-
-            Spacer(modifier = Modifier.height(18.dp))
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(SurfaceVariant, RoundedCornerShape(12.dp))
-                    .padding(16.dp)
-            ) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        RedlineTopBar(title = "PR music", onBack = onBack)
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = ScreenPadding, end = ScreenPadding, bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
                 Text(
-                    text = "Add track",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface
+                    "Save the song you want for a heavy attempt. Mid-workout, say “play my PR” and it opens in Spotify.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = label,
-                    onValueChange = { label = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Label") },
-                    placeholder = { Text("Bench PR") },
-                    singleLine = true
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = uri,
-                    onValueChange = { uri = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Spotify URI or URL") },
-                    placeholder = { Text("spotify:track:...") },
-                    singleLine = true
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = dropSeconds,
-                    onValueChange = { dropSeconds = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Drop time seconds") },
-                    placeholder = { Text("42") },
-                    singleLine = true
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Button(
-                    onClick = {
-                        viewModel.addTrack(label, uri, dropSeconds)
-                        label = ""
-                        uri = ""
-                        dropSeconds = ""
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Red500),
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Text("Save PR Track")
+            }
+
+            item {
+                SectionCard {
+                    Text("Add a track", style = MaterialTheme.typography.titleMedium, color = colors.onSurface)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = uri,
+                        onValueChange = { uri = it; linkError = false },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Spotify link") },
+                        placeholder = { Text("https://open.spotify.com/track/…") },
+                        isError = linkError,
+                        supportingText = if (linkError) {
+                            { Text("Paste a Spotify link or a spotify:track: URI") }
+                        } else null,
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Next)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = label,
+                            onValueChange = { label = it },
+                            modifier = Modifier.weight(1.6f),
+                            label = { Text("Name") },
+                            placeholder = { Text("Optional") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Next)
+                        )
+                        OutlinedTextField(
+                            value = dropSeconds,
+                            onValueChange = { dropSeconds = it.filter { c -> c.isDigit() }.take(4) },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("Drop at (s)") },
+                            placeholder = { Text("Optional") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = {
+                            if (viewModel.addTrack(label, uri, dropSeconds)) {
+                                label = ""; uri = ""; dropSeconds = ""
+                            } else {
+                                linkError = true
+                            }
+                        },
+                        enabled = uri.isNotBlank(),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().height(48.dp)
+                    ) { Text("Save track") }
                 }
             }
-            Spacer(modifier = Modifier.height(16.dp))
+
+            playError?.let { message ->
+                item {
+                    Text(message, style = MaterialTheme.typography.bodyMedium, color = colors.error)
+                }
+            }
 
             if (tracks.isEmpty()) {
-                Text(
-                    text = "Add a Spotify track URL or URI. During a workout, say \"play my PR\" to auto-queue it.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = OnSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(16.dp))
+                item {
+                    EmptyState(
+                        icon = Icons.Default.MusicNote,
+                        title = "No PR tracks yet",
+                        body = "The first one you save becomes the one “play my PR” opens."
+                    )
+                }
             } else {
-                Text(
-                    text = "Your PR Tracks (${tracks.size})",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
+                item { SectionLabel("Your tracks", Modifier.padding(top = 8.dp)) }
+                items(tracks, key = { it.id }) { track ->
+                    TrackCard(
+                        track = track,
+                        onPlay = { viewModel.play(track) },
+                        onDefault = { viewModel.setDefault(track) },
+                        onDelete = { viewModel.delete(track) }
+                    )
+                }
             }
         }
-
-        items(tracks, key = { it.id }) { track ->
-            TrackCard(
-                track = track,
-                onPlay = { viewModel.play(track) },
-                onDefault = { viewModel.setDefault(track) },
-                onDelete = { viewModel.delete(track) }
-            )
-            Spacer(modifier = Modifier.height(10.dp))
-        }
-
-        item { Spacer(modifier = Modifier.height(80.dp)) }
     }
 }
 
@@ -166,63 +163,59 @@ private fun TrackCard(
     onDefault: () -> Unit,
     onDelete: () -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(SurfaceVariant, RoundedCornerShape(12.dp))
-            .padding(16.dp)
-    ) {
+    val colors = MaterialTheme.colorScheme
+    SectionCard(contentPadding = 0.dp) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween
+            modifier = Modifier.padding(start = 16.dp, top = 8.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Column(modifier = Modifier.weight(1f).padding(top = 6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        track.label,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = colors.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (track.isDefault) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "Default",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = colors.onPrimaryContainer,
+                            modifier = Modifier
+                                .background(colors.primaryContainer, RoundedCornerShape(8.dp))
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                }
                 Text(
-                    text = track.label,
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = if (track.isDefault) "Default PR track" else "Saved PR track",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (track.isDefault) Red500 else OnSurfaceVariant
+                    buildString {
+                        if (track.dropTimestampMs > 0) append("Drop at ${track.dropTimestampMs / 1000}s  ·  ")
+                        append(track.trackUri)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
-            Text(
-                text = "${track.dropTimestampMs / 1000}s",
-                style = MaterialTheme.typography.bodyMedium,
-                color = OnSurfaceVariant
-            )
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Outlined.Delete, contentDescription = "Delete ${track.label}", tint = colors.onSurfaceVariant)
+            }
         }
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = track.trackUri,
-            style = MaterialTheme.typography.bodyMedium,
-            color = OnSurfaceVariant
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        Row {
-            Button(
-                onClick = onPlay,
-                colors = ButtonDefaults.buttonColors(containerColor = Red500),
-                shape = RoundedCornerShape(10.dp)
-            ) {
+        Row(
+            modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp, top = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            FilledTonalButton(onClick = onPlay) {
+                Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
                 Text("Play")
             }
-            Spacer(modifier = Modifier.width(8.dp))
-            OutlinedButton(
-                onClick = onDefault,
-                enabled = !track.isDefault,
-                shape = RoundedCornerShape(10.dp)
-            ) {
-                Text("Default")
-            }
-            Spacer(modifier = Modifier.width(8.dp))
-            OutlinedButton(
-                onClick = onDelete,
-                shape = RoundedCornerShape(10.dp)
-            ) {
-                Text("Delete")
+            if (!track.isDefault) {
+                TextButton(onClick = onDefault) { Text("Make default") }
             }
         }
     }

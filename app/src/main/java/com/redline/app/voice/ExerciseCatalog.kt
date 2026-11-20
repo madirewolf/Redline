@@ -66,6 +66,17 @@ object ExerciseCatalog {
         return aliasPatterns.firstOrNull { (pattern, _) -> pattern.containsMatchIn(text) }?.second
     }
 
+    /**
+     * The catalog entry a typed exercise name refers to, only when the whole
+     * name is that exercise ("pull-ups", "Bench Press"). Unlike [match] it
+     * won't read "Landmine Press" as some other press.
+     */
+    fun exact(name: String): ExerciseAlias? {
+        val text = name.lowercase().replace('-', ' ').trim().replace(Regex("""\s+"""), " ")
+        if (text.isEmpty()) return null
+        return aliasPatterns.firstOrNull { (pattern, _) -> pattern.matchEntire(text) != null }?.second
+    }
+
     fun displayNameForKey(key: String?): String? {
         if (key == null) return null
         return exercises.firstOrNull { it.key == key }?.displayName
