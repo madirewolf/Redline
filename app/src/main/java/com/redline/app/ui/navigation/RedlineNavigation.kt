@@ -25,10 +25,12 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Insights
 import androidx.compose.material.icons.outlined.Mic
@@ -46,6 +48,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -59,6 +62,9 @@ import com.redline.app.ui.progress.ProgressScreen
 import com.redline.app.ui.settings.SettingsScreen
 import com.redline.app.ui.tempo.TempoScreen
 import com.redline.app.ui.calories.CaloriesScreen
+import com.redline.app.ui.community.ChatScreen
+import com.redline.app.ui.community.CommunityScreen
+import com.redline.app.ui.community.FriendProfileScreen
 import com.redline.app.ui.motivation.MotivationScreen
 import com.redline.app.ui.progress.ExerciseHistoryScreen
 import com.redline.app.ui.workout.WorkoutDetailScreen
@@ -74,10 +80,15 @@ object Routes {
     const val EXERCISE_HISTORY = "exercise/{exerciseKey}"
     const val CALORIES = "calories"
     const val MOTIVATION = "motivation"
+    const val COMMUNITY = "community"
+    const val COMMUNITY_CHAT = "community/chat/{conversationId}"
+    const val COMMUNITY_FRIEND = "community/friend/{memberId}"
 
     fun workoutDetail(sessionId: Long) = "workout/$sessionId"
     // Uri.encode, not URLEncoder: Navigation decodes with Uri.decode, which leaves "+" as a plus.
     fun exerciseHistory(key: String) = "exercise/${android.net.Uri.encode(key)}"
+    fun communityChat(conversationId: String) = "community/chat/${android.net.Uri.encode(conversationId)}"
+    fun communityFriend(memberId: String) = "community/friend/${android.net.Uri.encode(memberId)}"
 }
 
 private data class PillItem(
@@ -94,7 +105,7 @@ fun RedlineNavHost() {
     val currentRoute = navBackStackEntry?.destination?.route
 
     // Top-level screens get the pill; everything you drill into gets a back arrow instead.
-    val pillScreens = setOf(Routes.HOME, Routes.TEMPO, Routes.INSIGHTS)
+    val pillScreens = setOf(Routes.HOME, Routes.TEMPO, Routes.INSIGHTS, Routes.COMMUNITY)
     val showPill = currentRoute in pillScreens
     val back: () -> Unit = { navController.popBackStack() }
     val page = MaterialTheme.colorScheme.background
@@ -132,6 +143,29 @@ fun RedlineNavHost() {
                 arguments = listOf(navArgument("exerciseKey") { type = NavType.StringType })
             ) {
                 ExerciseHistoryScreen(onBack = back)
+            }
+            composable(Routes.COMMUNITY) { CommunityScreen(navController) }
+            composable(
+                Routes.COMMUNITY_CHAT,
+                arguments = listOf(navArgument("conversationId") { type = NavType.StringType })
+            ) {
+                ChatScreen(
+                    onBack = back,
+                    onOpenProfile = { memberId ->
+                        navController.openOrGoBack(Routes.COMMUNITY_FRIEND, "memberId", memberId, Routes.communityFriend(memberId))
+                    }
+                )
+            }
+            composable(
+                Routes.COMMUNITY_FRIEND,
+                arguments = listOf(navArgument("memberId") { type = NavType.StringType })
+            ) {
+                FriendProfileScreen(
+                    onBack = back,
+                    onOpenChat = { conversationId ->
+                        navController.openOrGoBack(Routes.COMMUNITY_CHAT, "conversationId", conversationId, Routes.communityChat(conversationId))
+                    }
+                )
             }
         }
 
@@ -186,7 +220,8 @@ private fun FloatingNavPill(
         PillItem(Routes.HOME, "Home", Icons.Outlined.Home, Icons.Filled.Home),
         PillItem(Routes.TRAIN, "Train", Icons.Outlined.Mic, Icons.Filled.Mic),
         PillItem(Routes.TEMPO, "Tempo", Icons.Outlined.Speed, Icons.Filled.Speed),
-        PillItem(Routes.INSIGHTS, "Progress", Icons.Outlined.Insights, Icons.Filled.Insights)
+        PillItem(Routes.INSIGHTS, "Progress", Icons.Outlined.Insights, Icons.Filled.Insights),
+        PillItem(Routes.COMMUNITY, "Community", Icons.Outlined.Groups, Icons.Filled.Groups)
     )
 
     val colors = MaterialTheme.colorScheme
@@ -233,5 +268,18 @@ private fun FloatingNavPill(
                 }
             }
         }
+    }
+}
+
+/**
+ * A chat and a profile link to each other. If the screen you'd open is the one
+ * you came from, go back to it instead of stacking another copy on top.
+ */
+private fun NavController.openOrGoBack(route: String, argument: String, value: String, path: String) {
+    val previous = previousBackStackEntry
+    if (previous?.destination?.route == route && previous.arguments?.getString(argument) == value) {
+        popBackStack()
+    } else {
+        navigate(path) { launchSingleTop = true }
     }
 }
