@@ -14,6 +14,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import androidx.core.content.ContextCompat
+import com.redline.app.BuildConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -153,13 +154,16 @@ class VoiceCueRecorder @Inject constructor(
         var firstSampleNs: Long? = null
         var fromTimestamp = false
         var samplesRead = 0L
+        val capture = if (BuildConfig.DEBUG) DebugCapture.open(context) else null
         try {
             record.startRecording()
             if (record.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
                 fail("The microphone is in use by another app")
                 return
             }
-            publish(id) { VoiceTempoState.Listening(route.input, System.nanoTime(), emptyList()) }
+            val startedNs = System.nanoTime()
+            publish(id) { VoiceTempoState.Listening(route.input, startedNs, emptyList()) }
+            capture?.log("start rate=${record.sampleRate} source=${route.source} input=${route.input.kind}")
             while (coroutineContext.isActive) {
                 val read = record.read(buffer, 0, buffer.size)
                 if (read < 0) {
@@ -169,17 +173,25 @@ class VoiceCueRecorder @Inject constructor(
                 if (read == 0) continue
                 val now = System.nanoTime()
                 samplesRead += read
+                capture?.write(buffer, read)
                 if (firstSampleNs == null) firstSampleNs = now - samplesToNs(samplesRead)
                 // The audio clock says exactly when a sample was captured; use it once it's ready.
                 if (!fromTimestamp && record.getTimestamp(timestamp, AudioTimestamp.TIMEBASE_MONOTONIC) == AudioRecord.SUCCESS) {
+                    capture?.log("timestamp frame=${timestamp.framePosition} read=$samplesRead originShiftMs=${(timestamp.nanoTime - samplesToNs(timestamp.framePosition) - firstSampleNs!!) / 1e6}")
                     firstSampleNs = timestamp.nanoTime - samplesToNs(timestamp.framePosition)
                     fromTimestamp = true
+                }
+                if (capture != null && samplesRead / SAMPLE_RATE != (samplesRead - read) / SAMPLE_RATE) {
+                    capture.log("clock read=$samplesRead audioMs=${samplesToNs(samplesRead) / 1_000_000} wallMs=${(now - startedNs) / 1_000_000}")
                 }
                 val found = detector.feed(buffer, read)
                 _level.value = detector.level
                 if (found.isNotEmpty()) {
                     val origin = firstSampleNs!!
                     val heard = found.map { HeardCue(origin + samplesToNs(it.onsetSample), it.bottomLikelihood) }
+                    found.forEach {
+                        capture?.log("cue onset=${it.onsetSample} atMs=${samplesToNs(it.onsetSample) / 1_000_000} p=${it.bottomLikelihood} hiss=${it.hissFrames} syl=${it.syllables} dur=${it.durationMs}")
+                    }
                     publish(id) { s -> if (s is VoiceTempoState.Listening) s.copy(heard = s.heard + heard) else s }
                 }
             }
@@ -189,6 +201,7 @@ class VoiceCueRecorder @Inject constructor(
             runCatching { record.stop() }
             record.release()
             route.close()
+            capture?.close()
             _level.value = 0f
         }
     }
