@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    The Redline mark: a loaded bar bending under its plates. Drawn on a 120 grid and
+    The Redline mark: a thin bar bowing gently under wide-set plates. Drawn on a 120 grid and
     scaled into the adaptive icon's 66dp safe circle, so no launcher mask clips it.
 -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
@@ -12,19 +12,19 @@
         android:scaleX="0.72"
         android:scaleY="0.72"
         android:translateX="10.8"
-        android:translateY="12.1">
+        android:translateY="8">
         <path
-            android:pathData="M23,70 Q60,38 97,70"
+            android:pathData="M18.5,70 Q60,50 101.5,70"
             android:strokeColor="#EDEDEF"
-            android:strokeWidth="5"
+            android:strokeWidth="3"
             android:strokeLineCap="round" />
         <path
-            android:pathData="M41,44.2 L41,72.2 M79,44.2 L79,72.2"
+            android:pathData="M34,49.9 L34,77.9 M86,49.9 L86,77.9"
             android:strokeColor="#F25757"
             android:strokeWidth="8"
             android:strokeLineCap="round" />
         <path
-            android:pathData="M30,56 L30,73 M90,56 L90,73"
+            android:pathData="M23,59.4 L23,76.4 M97,59.4 L97,76.4"
             android:strokeColor="#F25757"
             android:strokeWidth="6"
             android:strokeLineCap="round" />
