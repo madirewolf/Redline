@@ -1,5 +1,9 @@
 package com.redline.app.ui.tempo
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -12,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -21,6 +26,10 @@ import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -29,20 +38,30 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.redline.app.data.local.entity.ExerciseSet
+import com.redline.app.tempo.AudioInput
+import com.redline.app.tempo.LiftKind
 import com.redline.app.tempo.TempoAnalysis
 import com.redline.app.tempo.TempoState
+import com.redline.app.tempo.VoiceTempoState
 import com.redline.app.ui.components.LiveDot
 import com.redline.app.ui.components.PageHeader
 import com.redline.app.ui.components.ScreenPadding
@@ -58,6 +77,35 @@ fun TempoScreen(viewModel: TempoViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val lastSet by viewModel.lastSet.collectAsStateWithLifecycle()
     val savedTo by viewModel.savedTo.collectAsStateWithLifecycle()
+    val mode by viewModel.mode.collectAsStateWithLifecycle()
+    val voiceState by viewModel.voiceState.collectAsStateWithLifecycle()
+    val voiceSet by viewModel.voiceSet.collectAsStateWithLifecycle()
+    val voiceLevel by viewModel.voiceLevel.collectAsStateWithLifecycle()
+    val input by viewModel.availableInput.collectAsStateWithLifecycle()
+    val liftKind by viewModel.liftKind.collectAsStateWithLifecycle()
+
+    val context = LocalContext.current
+    var micDenied by remember { mutableStateOf(false) }
+    val micLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        micDenied = !granted
+        if (granted) viewModel.startVoice()
+    }
+    val startVoice = {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            micDenied = false
+            viewModel.startVoice()
+        } else {
+            micLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    val listening = voiceState is VoiceTempoState.Listening
+    // The screen stays on while listening, so the live graph is there when you look.
+    val view = LocalView.current
+    DisposableEffect(listening) {
+        view.keepScreenOn = listening
+        onDispose { view.keepScreenOn = false }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -67,8 +115,33 @@ fun TempoScreen(viewModel: TempoViewModel = hiltViewModel()) {
         item {
             PageHeader(
                 title = "Tempo",
-                subtitle = "Measures how much your reps slow down, using the phone's motion sensor."
+                subtitle = when (mode) {
+                    TempoMode.VOICE -> "Times each lift from your “bottom” and “top” cues, and estimates how close you are to failure as you go."
+                    TempoMode.MOTION -> "Measures how much your reps slow down, using the phone's motion sensor."
+                }
             )
+        }
+        item {
+            ModeToggle(
+                mode = mode,
+                enabled = !listening && state !is TempoState.Recording,
+                onMode = viewModel::setMode
+            )
+        }
+        if (mode == TempoMode.VOICE) {
+            voiceItems(
+                state = voiceState,
+                voice = voiceSet,
+                level = voiceLevel,
+                input = input,
+                liftKind = liftKind,
+                micDenied = micDenied,
+                lastSet = lastSet,
+                saved = savedTo != null && savedTo == lastSet?.id,
+                viewModel = viewModel,
+                onStart = startVoice
+            )
+            return@LazyColumn
         }
         when (val s = state) {
             TempoState.Idle -> item { IdleCard(onStart = viewModel::start) }
@@ -95,6 +168,68 @@ fun TempoScreen(viewModel: TempoViewModel = hiltViewModel()) {
                 }
             }
             is TempoState.Error -> item { ErrorCard(s.message, onRetry = viewModel::reset) }
+        }
+    }
+}
+
+private fun LazyListScope.voiceItems(
+    state: VoiceTempoState,
+    voice: VoiceSet?,
+    level: Float,
+    input: AudioInput,
+    liftKind: LiftKind,
+    micDenied: Boolean,
+    lastSet: ExerciseSet?,
+    saved: Boolean,
+    viewModel: TempoViewModel,
+    onStart: () -> Unit
+) {
+    if (state is VoiceTempoState.Error) {
+        item { ErrorCard(state.message, onRetry = viewModel::resetVoice) }
+        return
+    }
+    if (voice == null) {
+        item { VoiceIdleCard(input, liftKind, viewModel::setLiftKind, micDenied, onStart) }
+        return
+    }
+    if (voice.listening) {
+        item { VoiceLiveCard(voice, level, onDone = viewModel::stopVoice, onRestart = onStart) }
+        item { VoiceGraphCard(voice) }
+        return
+    }
+    item { VoiceResultCard(voice) }
+    item { VoiceGraphCard(voice) }
+    if (voiceResultOf(voice) != null) {
+        item { SaveCard(lastSet = lastSet, saved = saved, onSave = viewModel::saveVoiceToLastSet) }
+    }
+    item {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(
+                onClick = onStart,
+                modifier = Modifier.weight(1f).height(48.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) { Text("Time another set") }
+            OutlinedButton(
+                onClick = viewModel::resetVoice,
+                modifier = Modifier.height(48.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) { Text("Clear") }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ModeToggle(mode: TempoMode, enabled: Boolean, onMode: (TempoMode) -> Unit) {
+    val options = listOf(TempoMode.VOICE to "Voice cues", TempoMode.MOTION to "Motion sensor")
+    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+        options.forEachIndexed { index, (option, label) ->
+            SegmentedButton(
+                selected = mode == option,
+                onClick = { onMode(option) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                enabled = enabled
+            ) { Text(label) }
         }
     }
 }
@@ -230,7 +365,7 @@ private fun ResultCard(analysis: TempoAnalysis) {
 }
 
 @Composable
-private fun SaveCard(lastSet: ExerciseSet?, saved: Boolean, onSave: () -> Unit) {
+internal fun SaveCard(lastSet: ExerciseSet?, saved: Boolean, onSave: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     SectionCard {
         if (lastSet == null) {
@@ -291,7 +426,7 @@ private fun UnscoredCard(analysis: TempoAnalysis) {
 }
 
 @Composable
-private fun ErrorCard(message: String, onRetry: () -> Unit) {
+internal fun ErrorCard(message: String, onRetry: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     SectionCard(contentPadding = 20.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -305,7 +440,7 @@ private fun ErrorCard(message: String, onRetry: () -> Unit) {
 }
 
 @Composable
-private fun ResultMetric(label: String, value: String, modifier: Modifier = Modifier) {
+internal fun ResultMetric(label: String, value: String, modifier: Modifier = Modifier) {
     Column(modifier = modifier) {
         Text(value, style = MaterialTheme.typography.titleLarge.merge(Tabular), color = MaterialTheme.colorScheme.onSurface)
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
