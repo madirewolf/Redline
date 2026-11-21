@@ -72,7 +72,9 @@
   header { padding: 20px 0; }
   header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
   .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; letter-spacing: -.01em; text-decoration: none; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); }
+  .mark { display: block; fill: none; stroke-linecap: round; }
+  .mark .bar { stroke: var(--text); }
+  .mark .plate { stroke: var(--red); }
   .nav-link { font-size: 15px; color: var(--muted); text-decoration: none; padding: 10px 4px; }
   .nav-link:hover { color: var(--text); }
 
@@ -190,7 +192,7 @@
 
 <header>
   <div class="wrap">
-    <a class="brand" href="/" aria-label="Redline home"><span class="dot" aria-hidden="true"></span>Redline</a>
+    <a class="brand" href="/" aria-label="Redline home"><svg class="mark" width="30" height="15" viewBox="18 37 84 42" aria-hidden="true"><path class="bar" d="M23 70Q60 38 97 70" stroke-width="6"/><path class="plate" d="M41 44.2V72.2M79 44.2V72.2" stroke-width="9"/><path class="plate" d="M30 56V73M90 56V73" stroke-width="7"/></svg>Redline</a>
     <a class="nav-link" href="https://github.com/madirewolf/Redline">Source on GitHub</a>
   </div>
 </header>
